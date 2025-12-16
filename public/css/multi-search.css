@@ -1,0 +1,550 @@
+/**
+ * Multi-Database Search Styles
+ * Genealogical society plugin
+ */
+
+/* Accessibility - Screen Reader Only Text */
+.screen-reader-text {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(1px, 1px, 1px, 1px);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* Skip to content link for keyboard navigation */
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: #0073aa;
+    color: #fff;
+    padding: 8px 16px;
+    text-decoration: none;
+    z-index: 100000;
+    border-radius: 0 0 4px 0;
+    font-weight: 600;
+}
+
+.skip-link:focus {
+    top: 0;
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
+/* Focus styles for better keyboard navigation */
+*:focus {
+    outline: 2px solid #0073aa;
+    outline-offset: 2px;
+}
+
+button:focus,
+a:focus {
+    outline: 2px solid #0073aa;
+    outline-offset: 2px;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: #0073aa;
+    box-shadow: 0 0 0 1px #0073aa;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .database-checkbox,
+    .field-group input,
+    .search-input {
+        border-width: 2px;
+    }
+
+    .database-badge {
+        border: 2px solid #000;
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Main wrapper */
+.supabase-multi-search-wrapper {
+    max-width: 1200px;
+    margin: 30px auto;
+    padding: 20px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.multi-search-form {
+    margin-bottom: 30px;
+}
+
+.multi-search-form h3 {
+    margin-top: 0;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #0073aa;
+    color: #333;
+    font-size: 24px;
+}
+
+.multi-search-form h4 {
+    margin-top: 20px;
+    margin-bottom: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #444;
+}
+
+/* Database Selection */
+.database-selection {
+    margin-bottom: 25px;
+    padding: 15px;
+    background: #f7f7f7;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+}
+
+.database-checkboxes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.select-all-wrapper {
+    grid-column: 1 / -1;
+    padding: 10px;
+    background: #fff;
+    border: 2px solid #0073aa;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+.database-checkbox {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.database-checkbox:hover {
+    border-color: #0073aa;
+    background: #f0f7ff;
+}
+
+.database-checkbox input[type="checkbox"] {
+    margin-right: 8px;
+    cursor: pointer;
+}
+
+.record-count {
+    margin-left: auto;
+    font-size: 12px;
+    color: #666;
+}
+
+/* Simple Search */
+.simple-search {
+    margin-bottom: 20px;
+}
+
+.search-input {
+    width: 100%;
+    padding: 12px;
+    font-size: 16px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    transition: border-color 0.2s ease;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: #0073aa;
+    box-shadow: 0 0 0 1px #0073aa;
+}
+
+.search-hint {
+    margin-top: 8px;
+    font-size: 13px;
+    color: #666;
+    font-style: italic;
+}
+
+/* Advanced Search Toggle */
+.advanced-toggle {
+    margin: 20px 0;
+}
+
+.toggle-advanced-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 16px;
+    background: #f7f7f7;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.toggle-advanced-btn:hover {
+    background: #e7e7e7;
+    border-color: #999;
+}
+
+.toggle-advanced-btn .dashicons {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+}
+
+/* Advanced Search Fields */
+.advanced-search {
+    padding: 20px;
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.advanced-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px;
+}
+
+.field-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.field-group label {
+    margin-bottom: 6px;
+    font-weight: 600;
+    font-size: 14px;
+    color: #333;
+}
+
+.field-group input[type="text"],
+.field-group input[type="number"] {
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: border-color 0.2s ease;
+}
+
+.field-group input:focus {
+    outline: none;
+    border-color: #0073aa;
+}
+
+.date-range {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.date-range input {
+    flex: 1;
+}
+
+.date-range span {
+    font-size: 14px;
+    color: #666;
+}
+
+.advanced-hint {
+    margin-top: 15px;
+    padding: 10px;
+    background: #fff;
+    border-left: 4px solid #0073aa;
+    font-size: 13px;
+    color: #666;
+}
+
+/* Search Actions */
+.search-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 20px;
+}
+
+#execute-multi-search {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    font-size: 16px;
+}
+
+#execute-multi-search .dashicons {
+    width: 20px;
+    height: 20px;
+    font-size: 20px;
+}
+
+/* Status Messages */
+#search-status-message {
+    margin-top: 15px;
+}
+
+.search-message {
+    padding: 12px 15px;
+    border-radius: 4px;
+    border-left: 4px solid;
+    font-size: 14px;
+}
+
+.search-message-info {
+    background: #e7f3ff;
+    border-color: #0073aa;
+    color: #0c5393;
+}
+
+.search-message-error {
+    background: #f8d7da;
+    border-color: #dc3545;
+    color: #721c24;
+}
+
+.search-message-success {
+    background: #d4edda;
+    border-color: #28a745;
+    color: #155724;
+}
+
+/* Results Section */
+.multi-search-results {
+    margin-top: 40px;
+    padding-top: 30px;
+    border-top: 2px solid #ddd;
+}
+
+.multi-search-results h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 22px;
+    color: #333;
+}
+
+#results-summary {
+    margin-bottom: 20px;
+}
+
+.results-summary-text {
+    font-size: 16px;
+    color: #555;
+}
+
+/* Database Badge */
+.database-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    background: #0073aa;
+    color: #fff;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* Record Data Display */
+.record-data {
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.record-field {
+    margin-bottom: 4px;
+}
+
+.record-field strong {
+    color: #333;
+    font-weight: 600;
+}
+
+/* Action buttons and messages */
+.expand-record-btn {
+    cursor: pointer;
+}
+
+/* Full record details expansion */
+.record-detail-row {
+    background: #f9f9f9;
+}
+
+.record-detail-cell {
+    padding: 0 !important;
+}
+
+.full-record-details {
+    padding: 20px;
+    border-top: 2px solid #0073aa;
+}
+
+.full-record-details h4 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #333;
+    font-size: 16px;
+}
+
+.record-details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.record-detail-item {
+    background: #fff;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.record-detail-label {
+    font-weight: 600;
+    color: #555;
+    font-size: 13px;
+    margin-bottom: 5px;
+    text-transform: capitalize;
+}
+
+.record-detail-value {
+    color: #333;
+    font-size: 14px;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+}
+
+.record-actions {
+    padding-top: 15px;
+    border-top: 1px solid #ddd;
+}
+
+.record-actions .button {
+    margin-right: 10px;
+}
+
+/* DataTables Customization */
+.dataTables_wrapper .dataTables_filter input {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.dataTables_wrapper .dataTables_length select {
+    padding: 6px 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+/* DataTables Buttons */
+.dt-buttons {
+    margin-bottom: 15px;
+}
+
+.dt-button {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 14px !important;
+    background: #0073aa !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 4px !important;
+    font-size: 14px !important;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    margin-right: 6px !important;
+}
+
+.dt-button:hover {
+    background: #005a87 !important;
+}
+
+.dt-button .dashicons {
+    width: 16px;
+    height: 16px;
+    font-size: 16px;
+}
+
+/* Loading spinner */
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive Design */
+@media screen and (max-width: 768px) {
+    .database-checkboxes {
+        grid-template-columns: 1fr;
+    }
+
+    .advanced-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .search-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .search-actions button {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .dt-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .dt-button {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* Print styles */
+@media print {
+    .multi-search-form,
+    .dt-buttons,
+    .dataTables_filter,
+    .dataTables_length,
+    .dataTables_paginate {
+        display: none !important;
+    }
+
+    .multi-search-results {
+        border-top: none;
+    }
+}
