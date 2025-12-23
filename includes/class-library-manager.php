@@ -96,30 +96,33 @@ class Supabase_Library_Manager {
     /**
      * Get field mappings for library columns
      * Maps standard library fields to actual database columns
+     * Updated for SGS Library Records schema
      *
      * @return array
      */
     public function get_field_mappings() {
+        // SGS Library Records actual column names
         $default_mappings = [
-            'title' => 'title',
-            'author' => 'author',
-            'description' => 'description',
-            'publisher' => 'publisher',
-            'publisher_location' => 'publisher_location',
-            'publication_date' => 'publication_date',
-            'reprint_date' => 'reprint_date',
-            'isbn' => 'isbn',
-            'call_number' => 'call_number',
-            'spl_collection' => 'spl_collection',
-            'link_url' => 'link_url',
-            'acquisition_date' => 'acquisition_date',
-            'donor_or_purchase' => 'donor_or_purchase',
-            'librarian_notes' => 'librarian_notes',
-            'updated' => 'updated',
-            'updated_by' => 'updated_by',
-            'new' => 'new',
-            'keyword' => 'keyword',
-            'geographic_area' => 'geographic_area'
+            'title' => 'Title',
+            'author' => 'Author',
+            'description' => 'Description',
+            'publisher' => 'Publisher',
+            'publisher_location' => 'Publisher Location',
+            'publication_date' => 'Pub. Year',
+            'reprint_date' => 'Reprint Year',
+            'isbn' => 'ISBN',
+            'call_number' => 'Call Number',
+            'spl_collection' => 'SPL Collection',
+            'link_url' => 'Link',
+            'acquisition_date' => 'Acq. Year',
+            'donor_or_purchase' => 'Donor',
+            'librarian_notes' => 'Librarian Notes',
+            'updated' => 'Last Updated Date',
+            'updated_by' => 'updatedByName',
+            'new' => 'New',
+            'location' => 'Location',
+            'media_type' => 'Media Type',
+            'physical_location' => 'Physical Location'
         ];
 
         $custom_mappings = get_option('supabase_library_field_mappings', []);

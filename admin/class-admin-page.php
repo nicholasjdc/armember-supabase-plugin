@@ -114,6 +114,10 @@ class Supabase_Admin_Page {
                    class="nav-tab <?php echo $active_tab === 'library' ? 'nav-tab-active' : ''; ?>">
                     Library
                 </a>
+                <a href="?page=supabase-armember&tab=librarians"
+                   class="nav-tab <?php echo $active_tab === 'librarians' ? 'nav-tab-active' : ''; ?>">
+                    Librarians
+                </a>
             </h2>
 
             <div class="tab-content">
@@ -122,6 +126,8 @@ class Supabase_Admin_Page {
                     $this->render_settings_tab();
                 } elseif ($active_tab === 'library') {
                     $this->render_library_tab();
+                } elseif ($active_tab === 'librarians') {
+                    $this->render_librarians_tab();
                 } else {
                     $this->render_tables_tab();
                 }
@@ -600,6 +606,170 @@ class Supabase_Admin_Page {
             </p>
         </div>
         <?php
+    }
+
+    /**
+     * Render Librarians Tab
+     * Manage users who have access to the Librarian CRUD interface
+     */
+    private function render_librarians_tab() {
+        // Handle form submission
+        if (isset($_POST['submit_librarians'])) {
+            check_admin_referer('supabase_librarians_settings');
+
+            // Save librarian emails
+            $librarian_emails = isset($_POST['librarian_emails']) ? sanitize_textarea_field($_POST['librarian_emails']) : '';
+            $emails_array = $this->parse_librarian_emails($librarian_emails);
+            update_option('supabase_librarian_emails', $emails_array);
+
+            echo '<div class="notice notice-success"><p>Librarian settings saved successfully.</p></div>';
+        }
+
+        // Get current librarians
+        $librarian_emails = get_option('supabase_librarian_emails', []);
+        $emails_text = implode("\n", $librarian_emails);
+
+        // Get info about current librarians
+        $librarian_users = $this->get_librarian_user_info($librarian_emails);
+
+        ?>
+        <div class="librarians-settings-page">
+            <h2>Librarian Access Management</h2>
+
+            <p>Manage which users have access to the Librarian interface (<code>[supabase_librarian]</code> shortcode).</p>
+            <p>Librarians can add, edit, and delete library records. <strong>Administrators always have access.</strong></p>
+
+            <hr>
+
+            <form method="post" action="">
+                <?php wp_nonce_field('supabase_librarians_settings'); ?>
+
+                <h3>Authorized Librarians</h3>
+                <p>Enter the email addresses of users who should have librarian access. One email per line.</p>
+
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">
+                            <label for="librarian_emails">Librarian Email Addresses</label>
+                        </th>
+                        <td>
+                            <textarea id="librarian_emails"
+                                      name="librarian_emails"
+                                      rows="10"
+                                      class="large-text code"
+                                      placeholder="librarian1@example.com&#10;librarian2@example.com"><?php echo esc_textarea($emails_text); ?></textarea>
+                            <p class="description">
+                                Enter one email address per line. Users must have a WordPress account with this email to access the librarian interface.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+
+                <?php submit_button('Save Librarian Settings', 'primary', 'submit_librarians'); ?>
+            </form>
+
+            <hr>
+
+            <h3>Current Librarians</h3>
+            <?php if (empty($librarian_emails)): ?>
+                <p><em>No librarians configured. Only administrators can access the librarian interface.</em></p>
+            <?php else: ?>
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>User Status</th>
+                            <th>Display Name</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($librarian_users as $info): ?>
+                            <tr>
+                                <td><?php echo esc_html($info['email']); ?></td>
+                                <td>
+                                    <?php if ($info['exists']): ?>
+                                        <span style="color: green;">✓ Valid WordPress User</span>
+                                    <?php else: ?>
+                                        <span style="color: #b32d2e;">✗ No WordPress Account</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?php echo esc_html($info['display_name'] ?: '—'); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <p class="description">
+                    <strong>Note:</strong> Users marked "No WordPress Account" will not be able to access the librarian interface until they create an account with that email.
+                </p>
+            <?php endif; ?>
+
+            <hr>
+
+            <h3>Access Information</h3>
+            <table class="form-table">
+                <tr>
+                    <th>Librarian Shortcode:</th>
+                    <td><code>[supabase_librarian]</code></td>
+                </tr>
+                <tr>
+                    <th>Who Can Access:</th>
+                    <td>
+                        <ul style="margin: 0; padding-left: 20px;">
+                            <li>All WordPress Administrators (automatically)</li>
+                            <li>Users whose email is listed above</li>
+                        </ul>
+                    </td>
+                </tr>
+                <tr>
+                    <th>Current Admins:</th>
+                    <td>
+                        <?php
+                        $admins = get_users(['role' => 'administrator', 'fields' => ['display_name', 'user_email']]);
+                        foreach ($admins as $admin) {
+                            echo esc_html($admin->display_name) . ' (' . esc_html($admin->user_email) . ')<br>';
+                        }
+                        ?>
+                    </td>
+                </tr>
+            </table>
+        </div>
+        <?php
+    }
+
+    /**
+     * Parse librarian emails from textarea input
+     */
+    private function parse_librarian_emails($input) {
+        $lines = explode("\n", $input);
+        $emails = [];
+
+        foreach ($lines as $line) {
+            $email = trim($line);
+            if (!empty($email) && is_email($email)) {
+                $emails[] = strtolower($email);
+            }
+        }
+
+        return array_unique($emails);
+    }
+
+    /**
+     * Get user info for librarian emails
+     */
+    private function get_librarian_user_info($emails) {
+        $info = [];
+
+        foreach ($emails as $email) {
+            $user = get_user_by('email', $email);
+            $info[] = [
+                'email' => $email,
+                'exists' => $user !== false,
+                'display_name' => $user ? $user->display_name : '',
+                'user_id' => $user ? $user->ID : null
+            ];
+        }
+
+        return $info;
     }
 
     /**

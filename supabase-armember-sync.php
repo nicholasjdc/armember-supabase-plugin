@@ -23,6 +23,7 @@ require_once SUPABASE_ARMEMBER_PLUGIN_DIR . 'includes/class-sync-handler.php';
 require_once SUPABASE_ARMEMBER_PLUGIN_DIR . 'includes/class-data-display.php';
 require_once SUPABASE_ARMEMBER_PLUGIN_DIR . 'includes/class-library-manager.php';
 require_once SUPABASE_ARMEMBER_PLUGIN_DIR . 'includes/class-library-display.php';
+require_once SUPABASE_ARMEMBER_PLUGIN_DIR . 'includes/class-librarian-display.php';
 require_once SUPABASE_ARMEMBER_PLUGIN_DIR . 'admin/class-admin-page.php';
 
 /**
@@ -37,6 +38,9 @@ function supabase_armember_init() {
 
     // Initialize library display (library catalog shortcode)
     new Supabase_Library_Display();
+
+    // Initialize librarian display (librarian CRUD interface)
+    new Supabase_Librarian_Display();
 
     // Initialize unified admin page (only in admin)
     if (is_admin()) {
