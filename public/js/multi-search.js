@@ -204,7 +204,12 @@ jQuery(document).ready(function($) {
                     orderable: false,
                     render: function(data, type, row) {
                         if (type === 'display') {
-                            return '<button type="button" class="button button-small expand-record-btn" aria-expanded="false" aria-label="View full record details">View Full Record</button>';
+                            var buttons = '<div class="record-actions">';
+                            buttons += '<button type="button" class="button button-small expand-record-btn" aria-expanded="false" aria-label="View full record details">View Full Record</button>';
+                            buttons += '<button type="button" class="button button-small print-record-btn" aria-label="Print full record"><span class="dashicons dashicons-printer"></span> Print</button>';
+                            buttons += '<button type="button" class="button button-small copy-record-btn" aria-label="Copy full record to clipboard"><span class="dashicons dashicons-clipboard"></span> Copy</button>';
+                            buttons += '</div>';
+                            return buttons;
                         }
                         return '';
                     }
@@ -340,6 +345,137 @@ jQuery(document).ready(function($) {
                 $(this).data('expanding', false);
             }
         });
+
+        // Handle print record button clicks
+        $('#multi-search-results-table').off('click', '.print-record-btn');
+        $('#multi-search-results-table').on('click', '.print-record-btn', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            var $tr = $(this).closest('tr');
+            var fullRecord = $tr.data('fullRecord');
+
+            if (!fullRecord) {
+                alert('Error: Could not load record data.');
+                return;
+            }
+
+            printRecord(fullRecord);
+        });
+
+        // Handle copy record button clicks
+        $('#multi-search-results-table').off('click', '.copy-record-btn');
+        $('#multi-search-results-table').on('click', '.copy-record-btn', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            var $tr = $(this).closest('tr');
+            var fullRecord = $tr.data('fullRecord');
+
+            if (!fullRecord) {
+                alert('Error: Could not load record data.');
+                return;
+            }
+
+            copyRecordToClipboard(fullRecord, $(this));
+        });
+    }
+
+    /**
+     * Print a full record
+     */
+    function printRecord(record) {
+        // Generate HTML for the record
+        var html = renderFullRecordDetails(record);
+
+        // Create a new window for printing
+        var printWindow = window.open('', '_blank', 'width=800,height=600');
+
+        // Write the HTML content
+        printWindow.document.write('<!DOCTYPE html>');
+        printWindow.document.write('<html><head><title>Database Record</title>');
+        printWindow.document.write('<style>');
+        printWindow.document.write('body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }');
+        printWindow.document.write('h4 { margin-top: 0; margin-bottom: 1.5rem; padding-bottom: 0.5rem; border-bottom: 2px solid #212529; }');
+        printWindow.document.write('.record-details-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; }');
+        printWindow.document.write('.record-detail-item { padding: 0.75rem; border: 1px solid #dee2e6; border-radius: 4px; page-break-inside: avoid; }');
+        printWindow.document.write('.record-detail-label { font-weight: 600; color: #495057; margin-bottom: 0.25rem; font-size: 0.9rem; }');
+        printWindow.document.write('.record-detail-value { color: #212529; font-size: 1rem; }');
+        printWindow.document.write('@media print { body { padding: 10px; } }');
+        printWindow.document.write('</style>');
+        printWindow.document.write('</head><body>');
+        printWindow.document.write(html);
+        printWindow.document.write('</body></html>');
+        printWindow.document.close();
+
+        // Wait for content to load, then print
+        printWindow.onload = function() {
+            printWindow.focus();
+            printWindow.print();
+            printWindow.onafterprint = function() {
+                printWindow.close();
+            };
+        };
+    }
+
+    /**
+     * Copy record to clipboard
+     */
+    function copyRecordToClipboard(record, $button) {
+        // Create formatted text from record
+        var text = 'DATABASE RECORD\n';
+        text += '================\n\n';
+
+        for (var key in record) {
+            if (record.hasOwnProperty(key) && !key.startsWith('_') && record[key] !== null && record[key] !== '') {
+                var label = key.replace(/_/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); });
+                var value = record[key];
+
+                // Format value based on type
+                if (typeof value === 'boolean') {
+                    value = value ? 'Yes' : 'No';
+                } else if (typeof value === 'object') {
+                    value = JSON.stringify(value, null, 2);
+                }
+
+                text += label + ': ' + value + '\n';
+            }
+        }
+
+        // Copy to clipboard
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function() {
+                // Show success feedback
+                var originalText = $button.html();
+                $button.html('<span class="dashicons dashicons-yes"></span> Copied!');
+                setTimeout(function() {
+                    $button.html(originalText);
+                }, 2000);
+            }).catch(function(err) {
+                console.error('Failed to copy:', err);
+                alert('Failed to copy to clipboard. Please try again.');
+            });
+        } else {
+            // Fallback for older browsers
+            var textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-9999px';
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                var originalText = $button.html();
+                $button.html('<span class="dashicons dashicons-yes"></span> Copied!');
+                setTimeout(function() {
+                    $button.html(originalText);
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy:', err);
+                alert('Failed to copy to clipboard. Please try again.');
+            }
+            document.body.removeChild(textArea);
+        }
     }
 
     /**

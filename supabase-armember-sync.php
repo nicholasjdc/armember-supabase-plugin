@@ -21,6 +21,8 @@ define('SUPABASE_ARMEMBER_PLUGIN_URL', plugin_dir_url(__FILE__));
 require_once SUPABASE_ARMEMBER_PLUGIN_DIR . 'includes/class-supabase-client.php';
 require_once SUPABASE_ARMEMBER_PLUGIN_DIR . 'includes/class-sync-handler.php';
 require_once SUPABASE_ARMEMBER_PLUGIN_DIR . 'includes/class-data-display.php';
+require_once SUPABASE_ARMEMBER_PLUGIN_DIR . 'includes/class-library-manager.php';
+require_once SUPABASE_ARMEMBER_PLUGIN_DIR . 'includes/class-library-display.php';
 require_once SUPABASE_ARMEMBER_PLUGIN_DIR . 'admin/class-admin-page.php';
 
 /**
@@ -32,6 +34,9 @@ function supabase_armember_init() {
 
     // Initialize data display (shortcodes)
     new Supabase_Data_Display();
+
+    // Initialize library display (library catalog shortcode)
+    new Supabase_Library_Display();
 
     // Initialize unified admin page (only in admin)
     if (is_admin()) {

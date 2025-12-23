@@ -208,4 +208,48 @@ jQuery(document).ready(function($) {
         });
     });
 
+    // Set library table button handler
+    $(document).on('click', '.set-library-btn', function() {
+        var $btn = $(this);
+        var tableName = $btn.data('table');
+        var actionType = $btn.data('action');
+        var confirmMsg = actionType === 'set'
+            ? 'Set "' + tableName + '" as the library table?\n\nThis will remove the library designation from any other table.'
+            : 'Remove library designation from "' + tableName + '"?';
+
+        if (!confirm(confirmMsg)) {
+            return;
+        }
+
+        $btn.prop('disabled', true).text(actionType === 'set' ? 'Setting...' : 'Removing...');
+
+        $.ajax({
+            url: supabaseAdmin.ajaxUrl,
+            type: 'POST',
+            data: {
+                action: 'supabase_set_library_table',
+                nonce: supabaseAdmin.nonce,
+                table: tableName,
+                action_type: actionType
+            },
+            success: function(response) {
+                if (response.success) {
+                    var msg = actionType === 'set' ? 'Library table set successfully' : 'Library designation removed';
+                    var $notice = $('<div class="notice notice-success is-dismissible"><p>' + msg + '</p></div>');
+                    $('.wrap h1').first().after($notice);
+                    setTimeout(function() {
+                        location.reload();
+                    }, 1000);
+                } else {
+                    alert('Error: ' + response.data.message);
+                    $btn.prop('disabled', false).text(actionType === 'set' ? 'Set as Library' : 'Remove');
+                }
+            },
+            error: function() {
+                alert('An error occurred while updating library designation.');
+                $btn.prop('disabled', false).text(actionType === 'set' ? 'Set as Library' : 'Remove');
+            }
+        });
+    });
+
 });

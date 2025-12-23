@@ -548,3 +548,45 @@ textarea:focus {
         border-top: none;
     }
 }
+
+/* Record Actions Buttons */
+.record-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+
+.record-actions .button {
+    margin: 0;
+    width: 100%;
+    justify-content: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+}
+
+.record-actions .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+}
+
+.print-record-btn,
+.copy-record-btn {
+    font-size: 0.85rem;
+}
+
+.print-record-btn:hover,
+.copy-record-btn:hover {
+    background-color: #f0f0f1;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .record-actions .button {
+        font-size: 0.8rem;
+        padding: 0.25rem 0.5rem;
+    }
+}

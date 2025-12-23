@@ -25,6 +25,7 @@ class Supabase_Admin_Page {
         add_action('wp_ajax_supabase_create_table_page', [$this, 'ajax_create_table_page']);
         add_action('wp_ajax_supabase_delete_table_page', [$this, 'ajax_delete_table_page']);
         add_action('wp_ajax_supabase_toggle_table_lock', [$this, 'ajax_toggle_table_lock']);
+        add_action('wp_ajax_supabase_set_library_table', [$this, 'ajax_set_library_table']);
 
         // Enqueue admin scripts
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
@@ -109,12 +110,18 @@ class Supabase_Admin_Page {
                    class="nav-tab <?php echo $active_tab === 'tables' ? 'nav-tab-active' : ''; ?>">
                     Tables
                 </a>
+                <a href="?page=supabase-armember&tab=library"
+                   class="nav-tab <?php echo $active_tab === 'library' ? 'nav-tab-active' : ''; ?>">
+                    Library
+                </a>
             </h2>
 
             <div class="tab-content">
                 <?php
                 if ($active_tab === 'settings') {
                     $this->render_settings_tab();
+                } elseif ($active_tab === 'library') {
+                    $this->render_library_tab();
                 } else {
                     $this->render_tables_tab();
                 }
@@ -259,6 +266,7 @@ class Supabase_Admin_Page {
     private function render_tables_tab() {
         $tables = get_option('supabase_schema_tables', []);
         $last_sync = get_option('supabase_schema_last_sync', false);
+        $library_table = get_option('supabase_library_table', '');
 
         // Filter out system tables like wp_users
         $tables = array_filter($tables, function($table) {
@@ -299,6 +307,7 @@ class Supabase_Admin_Page {
                             <th>Rows</th>
                             <th>Columns</th>
                             <th>Locked</th>
+                            <th>Library</th>
                             <th>Page Status</th>
                             <th>Actions</th>
                         </tr>
@@ -308,6 +317,7 @@ class Supabase_Admin_Page {
                             <?php
                             $page = $this->get_table_page($table['table_name']);
                             $page_exists = $page !== null;
+                            $is_library = ($library_table === $table['table_name']);
                             ?>
                             <tr data-table="<?php echo esc_attr($table['table_name']); ?>">
                                 <td><strong><?php echo esc_html($table['table_name']); ?></strong></td>
@@ -320,6 +330,27 @@ class Supabase_Admin_Page {
                                                data-table="<?php echo esc_attr($table['table_name']); ?>"
                                                <?php checked($table['is_locked'] ?? true, true); ?> />
                                     </label>
+                                </td>
+                                <td class="library-designation-cell">
+                                    <?php if ($is_library): ?>
+                                        <span class="library-badge" title="This is the library table">
+                                            <span class="dashicons dashicons-book" style="color: #2271b1;"></span>
+                                            <strong>Library</strong>
+                                        </span>
+                                        <button type="button"
+                                                class="button button-small set-library-btn"
+                                                data-table="<?php echo esc_attr($table['table_name']); ?>"
+                                                data-action="remove">
+                                            Remove
+                                        </button>
+                                    <?php else: ?>
+                                        <button type="button"
+                                                class="button button-small set-library-btn"
+                                                data-table="<?php echo esc_attr($table['table_name']); ?>"
+                                                data-action="set">
+                                            Set as Library
+                                        </button>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
                                     <?php if ($page_exists): ?>
@@ -370,6 +401,204 @@ class Supabase_Admin_Page {
             <?php endif; ?>
 
         <?php endif; ?>
+        <?php
+    }
+
+    /**
+     * Render Library Tab
+     */
+    private function render_library_tab() {
+        // Handle form submission
+        if (isset($_POST['submit_library_settings'])) {
+            check_admin_referer('supabase_library_settings');
+
+            // Save geographic areas
+            $geographic_areas = isset($_POST['geographic_areas']) ? sanitize_textarea_field($_POST['geographic_areas']) : '';
+            $areas_array = array_filter(array_map('trim', explode("\n", $geographic_areas)));
+            update_option('supabase_library_geographic_areas', $areas_array);
+
+            echo '<div class="notice notice-success"><p>Library settings saved successfully.</p></div>';
+        }
+
+        $library_manager = new Supabase_Library_Manager();
+        $library_table = $library_manager->get_library_table();
+        $library_table_info = $library_manager->get_library_table_info();
+        $geographic_areas = $library_manager->get_geographic_areas();
+
+        ?>
+        <div class="library-settings-page">
+            <h2>Library Catalog Settings</h2>
+
+            <?php if (!$library_table): ?>
+                <div class="notice notice-warning">
+                    <p>No library table has been designated. Please go to the <a href="?page=supabase-armember&tab=tables">Tables tab</a> to designate a table as the library.</p>
+                </div>
+            <?php else: ?>
+                <div class="notice notice-info">
+                    <p>
+                        <strong>Current Library Table:</strong> <?php echo esc_html($library_table); ?>
+                        <?php if ($library_table_info): ?>
+                            (<?php echo number_format($library_table_info['row_count']); ?> items)
+                        <?php endif; ?>
+                    </p>
+                    <p><strong>Shortcode:</strong> <code>[supabase_library_catalog]</code></p>
+                    <p>Use this shortcode on any page to display the library catalog with search functionality.</p>
+                </div>
+
+                <?php
+                $validation = $library_manager->validate_library_table();
+                if (!$validation['valid']):
+                ?>
+                    <div class="notice notice-error">
+                        <p><strong>Library Table Validation Error:</strong> <?php echo esc_html($validation['error']); ?></p>
+                        <p>The library table is missing required fields. Please ensure your Supabase table has columns for: title, author.</p>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
+
+            <hr>
+
+            <form method="post" action="">
+                <?php wp_nonce_field('supabase_library_settings'); ?>
+
+                <h3>Geographic Areas</h3>
+                <p>Configure the geographic areas that appear in the library search dropdown. Enter one area per line.</p>
+
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">
+                            <label for="geographic_areas">Geographic Areas</label>
+                        </th>
+                        <td>
+                            <textarea id="geographic_areas"
+                                      name="geographic_areas"
+                                      rows="10"
+                                      class="large-text code"><?php echo esc_textarea(implode("\n", $geographic_areas)); ?></textarea>
+                            <p class="description">Enter one geographic area per line (e.g., North America, Europe, Asia)</p>
+                        </td>
+                    </tr>
+                </table>
+
+                <?php submit_button('Save Library Settings', 'primary', 'submit_library_settings'); ?>
+            </form>
+
+            <hr>
+
+            <h3>Library Field Mappings</h3>
+            <p>The library catalog expects the following fields in your Supabase table:</p>
+
+            <table class="wp-list-table widefat fixed striped">
+                <thead>
+                    <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                        <th>Required</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>title</code></td>
+                        <td>Book/item title</td>
+                        <td><span class="dashicons dashicons-yes" style="color: green;"></span> Required</td>
+                    </tr>
+                    <tr>
+                        <td><code>author</code></td>
+                        <td>Author name(s)</td>
+                        <td><span class="dashicons dashicons-yes" style="color: green;"></span> Required</td>
+                    </tr>
+                    <tr>
+                        <td><code>description</code></td>
+                        <td>Item description</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>publisher</code></td>
+                        <td>Publisher name</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>publisher_location</code></td>
+                        <td>Publisher location</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>publication_date</code></td>
+                        <td>Date of publication</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>reprint_date</code></td>
+                        <td>Reprint date</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>isbn</code></td>
+                        <td>ISBN number</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>call_number</code></td>
+                        <td>Library call number</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>spl_collection</code></td>
+                        <td>SPL Collection identifier</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>link_url</code></td>
+                        <td>External link URL</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>acquisition_date</code></td>
+                        <td>Date item was acquired</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>donor_or_purchase</code></td>
+                        <td>Donor name or purchase info</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>librarian_notes</code></td>
+                        <td>Internal librarian notes</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>keyword</code></td>
+                        <td>Keywords for searching</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>geographic_area</code></td>
+                        <td>Geographic area classification</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>new</code></td>
+                        <td>Boolean flag for new items</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>updated</code></td>
+                        <td>Last update timestamp</td>
+                        <td>Optional</td>
+                    </tr>
+                    <tr>
+                        <td><code>updated_by</code></td>
+                        <td>User who last updated</td>
+                        <td>Optional</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p class="description">
+                <strong>Note:</strong> If your Supabase table uses different column names, the data will not display correctly.
+                Future versions may support custom field mapping.
+            </p>
+        </div>
         <?php
     }
 
@@ -702,5 +931,48 @@ class Supabase_Admin_Page {
             'ID' => $parent_page->ID,
             'post_content' => $content
         ]);
+    }
+
+    /**
+     * AJAX handler for setting/removing library table designation
+     */
+    public function ajax_set_library_table() {
+        check_ajax_referer('supabase_admin', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Insufficient permissions']);
+        }
+
+        $table_name = isset($_POST['table']) ? sanitize_text_field($_POST['table']) : '';
+        $action = isset($_POST['action_type']) ? sanitize_text_field($_POST['action_type']) : '';
+
+        if (empty($table_name)) {
+            wp_send_json_error(['message' => 'Table name required']);
+        }
+
+        if ($action === 'set') {
+            // Set this table as the library table
+            update_option('supabase_library_table', $table_name);
+            wp_send_json_success([
+                'message' => 'Library table set successfully',
+                'table' => $table_name,
+                'is_library' => true
+            ]);
+        } elseif ($action === 'remove') {
+            // Remove library designation
+            $current_library = get_option('supabase_library_table', '');
+            if ($current_library === $table_name) {
+                delete_option('supabase_library_table');
+                wp_send_json_success([
+                    'message' => 'Library designation removed',
+                    'table' => $table_name,
+                    'is_library' => false
+                ]);
+            } else {
+                wp_send_json_error(['message' => 'This table is not the library table']);
+            }
+        } else {
+            wp_send_json_error(['message' => 'Invalid action']);
+        }
     }
 }
