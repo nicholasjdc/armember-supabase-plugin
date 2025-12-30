@@ -59,20 +59,24 @@ class Supabase_Library_Display {
         // JSZip for Excel export
         wp_enqueue_script('jszip', 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', [], null, true);
 
-        // Library catalog CSS
+        // Library catalog CSS - use file modification time for better cache busting
+        $css_file_path = SUPABASE_ARMEMBER_PLUGIN_DIR . 'public/css/library-catalog.css';
+        $css_version = file_exists($css_file_path) ? filemtime($css_file_path) : SUPABASE_ARMEMBER_VERSION;
         wp_enqueue_style(
             'supabase-library-catalog',
             SUPABASE_ARMEMBER_PLUGIN_URL . 'public/css/library-catalog.css',
             [],
-            SUPABASE_ARMEMBER_VERSION
+            $css_version
         );
 
-        // Library catalog JS
+        // Library catalog JS - use file modification time for better cache busting
+        $js_file_path = SUPABASE_ARMEMBER_PLUGIN_DIR . 'public/js/library-catalog.js';
+        $js_version = file_exists($js_file_path) ? filemtime($js_file_path) : SUPABASE_ARMEMBER_VERSION;
         wp_enqueue_script(
             'supabase-library-catalog',
             SUPABASE_ARMEMBER_PLUGIN_URL . 'public/js/library-catalog.js',
             ['jquery', 'datatables'],
-            SUPABASE_ARMEMBER_VERSION,
+            $js_version,
             true
         );
 
@@ -334,8 +338,11 @@ class Supabase_Library_Display {
         // Get total count (without filters)
         $total_count = $this->get_table_count($table_name);
 
-        // Get filtered count
-        $filtered_count = $this->get_filtered_count($table_name, $filters);
+        // Get filtered count (with filters applied)
+        $filtered_count = $this->get_filtered_count($table_name, $filters, $actual_columns);
+        
+        // Debug logging
+        error_log('Library search counts - Total: ' . $total_count . ', Filtered: ' . $filtered_count);
 
         // Build query parameters for Supabase fetch method
         $query_params = [
@@ -487,18 +494,94 @@ class Supabase_Library_Display {
      * Get filtered row count
      *
      * @param string $table_name
-     * @param array $filters
+     * @param array $filters Filter strings in the same format as data query
+     * @param array $actual_columns Actual column names from table
      * @return int
      */
-    private function get_filtered_count($table_name, $filters) {
+    private function get_filtered_count($table_name, $filters, $actual_columns = []) {
         if (empty($filters)) {
             return $this->get_table_count($table_name);
         }
 
-        // For filtered counts, use a reasonable upper limit
-        // Fetching all filtered results just to count them could be expensive
-        // We'll use the total count as an approximation
-        return $this->get_table_count($table_name);
+        // Build query parameters for count query (same format as data query)
+        $count_params = [];
+        
+        // Add filters to count query params (same logic as data query)
+        foreach ($filters as $filter) {
+            // Filters can be in two formats:
+            // 1. "key=value" (e.g., "or=(Title.ilike.*george*)")
+            // 2. "column.operator.value" (e.g., "Title.ilike.*george*")
+
+            if (strpos($filter, '=') !== false) {
+                // Format: key=value
+                list($key, $value) = explode('=', $filter, 2);
+                $count_params[$key] = $value;
+            } else {
+                // Format: column.operator.value
+                // Extract column name (everything before first dot)
+                $parts = explode('.', $filter, 2);
+                if (count($parts) === 2) {
+                    $column = $parts[0];
+                    $operatorAndValue = $parts[1]; // e.g., "ilike.*george*"
+                    $count_params[$column] = $operatorAndValue;
+                }
+            }
+        }
+
+        // Use Supabase count endpoint with filters (same as fetch method)
+        // Build query string - special handling for 'or' parameter
+        $query_params = array_merge(['select' => '*'], $count_params);
+
+        // Extract 'or' parameter if present for special handling (same as fetch method)
+        $or_param = null;
+        if (isset($query_params['or'])) {
+            $or_param = $query_params['or'];
+            unset($query_params['or']);
+        }
+
+        // Build regular query string
+        $query_string = http_build_query($query_params);
+
+        // Add 'or' parameter manually with minimal encoding (same as fetch method)
+        if ($or_param !== null) {
+            $or_param_encoded = str_replace(' ', '%20', $or_param);
+            $query_string .= ($query_string ? '&' : '') . 'or=' . $or_param_encoded;
+        }
+
+        $endpoint = $this->supabase->url . '/rest/v1/' . $table_name;
+        if (!empty($query_string)) {
+            $endpoint .= '?' . $query_string;
+        }
+
+        // Debug logging
+        error_log('Filtered count query: ' . $endpoint);
+
+        $response = wp_remote_get($endpoint, [
+            'headers' => [
+                'apikey' => $this->supabase->key,
+                'Authorization' => 'Bearer ' . $this->supabase->key,
+                'Prefer' => 'count=exact',
+                'Range' => '0-0' // Only get headers, not data
+            ],
+            'timeout' => 15
+        ]);
+
+        if (is_wp_error($response)) {
+            error_log('Error getting filtered count: ' . $response->get_error_message());
+            // Fallback to total count if query fails
+            return $this->get_table_count($table_name);
+        }
+
+        $headers = wp_remote_retrieve_headers($response);
+        $count = 0;
+
+        if (isset($headers['content-range'])) {
+            if (preg_match('/\/(\d+)$/', $headers['content-range'], $matches)) {
+                $count = (int) $matches[1];
+            }
+        }
+
+        return $count;
     }
 
     /**

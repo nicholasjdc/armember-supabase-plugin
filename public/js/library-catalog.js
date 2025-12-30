@@ -142,6 +142,11 @@ jQuery(document).ready(function($) {
             }
         }
 
+        // If the data has a full_data property, use that (it contains the complete Supabase row)
+        if (rowData && rowData.full_data) {
+            rowData = rowData.full_data;
+        }
+
         showItemDetail(rowData);
     });
 
@@ -213,35 +218,53 @@ jQuery(document).ready(function($) {
      * Show item detail modal
      */
     function showItemDetail(data) {
-        var titleValue = getValueCaseInsensitive(data, 'title') || 'Untitled';
+        // Debug: log the data structure to see what keys are available
+        console.log('Item detail data keys:', Object.keys(data));
+        console.log('Item detail data:', data);
+        
+        var titleValue = getValueCaseInsensitive(data, 'Title') || getValueCaseInsensitive(data, 'title') || 'Untitled';
         var html = '<h3>' + escapeHtml(titleValue) + '</h3>';
 
-        // Field definitions with labels
+        // Field definitions with labels - matching actual Supabase schema
+        // Each field can have multiple possible key names to try
         var fields = [
-            { key: 'author', label: 'Author' },
-            { key: 'description', label: 'Description' },
-            { key: 'publisher', label: 'Publisher' },
-            { key: 'publisher_location', label: 'Publisher Location' },
-            { key: 'publication_date', label: 'Publication Date' },
-            { key: 'reprint_date', label: 'Reprint Date' },
-            { key: 'isbn', label: 'ISBN' },
-            { key: 'call_number', label: 'Call Number' },
-            { key: 'spl_collection', label: 'SPL Collection' },
-            { key: 'link_url', label: 'Link' },
-            { key: 'acquisition_date', label: 'Acquisition Date' },
-            { key: 'donor_or_purchase', label: 'Donor or Purchase' },
-            { key: 'librarian_notes', label: 'Librarian Notes' },
-            { key: 'keyword', label: 'Keywords' },
-            { key: 'geographic_area', label: 'Geographic Area' },
-            { key: 'updated', label: 'Last Updated' },
-            { key: 'updated_by', label: 'Updated By' },
-            { key: 'new', label: 'New Item', render: function(val) {
-                return val === true || val === 'true' || val === 1 ? 'Yes' : 'No';
+            { keys: ['Author'], label: 'Author' },
+            { keys: ['Description'], label: 'Description' },
+            { keys: ['Publisher'], label: 'Publisher' },
+            { keys: ['Publisher Location', 'PublisherLocation', 'publisher_location'], label: 'Publisher Location' },
+            { keys: ['Pub. Year', 'Pub Year', 'Publication Year', 'publication_date', 'pub_year'], label: 'Publication Year' },
+            { keys: ['Reprint Year', 'ReprintYear', 'reprint_date', 'reprint_year'], label: 'Reprint Year' },
+            { keys: ['Location'], label: 'Location' },
+            { keys: ['Media Type', 'MediaType', 'media_type'], label: 'Media Type' },
+            { keys: ['Call Number', 'CallNumber', 'call_number'], label: 'Call Number' },
+            { keys: ['ISBN'], label: 'ISBN' },
+            { keys: ['Physical Location', 'PhysicalLocation', 'physical_location'], label: 'Physical Location' },
+            { keys: ['SPL Collection', 'SPLCollection', 'spl_collection'], label: 'SPL Collection' },
+            { keys: ['Link', 'link_url', 'Link URL'], label: 'Link' },
+            { keys: ['Acq. Year', 'Acq Year', 'Acquisition Year', 'acquisition_date', 'acq_year'], label: 'Acquisition Year' },
+            { keys: ['Donor', 'donor_or_purchase', 'Donor or Purchase'], label: 'Donor' },
+            { keys: ['Librarian Notes', 'LibrarianNotes', 'librarian_notes'], label: 'Librarian Notes' },
+            { keys: ['updatedByName', 'updated_by', 'Updated By'], label: 'Updated By' },
+            { keys: ['Last Updated Date', 'LastUpdatedDate', 'updated', 'last_updated_date'], label: 'Last Updated Date' },
+            { keys: ['New'], label: 'New Item', render: function(val) {
+                // Handle text values: "Yes", "No", true, false, 1, 0, etc.
+                if (val === true || val === 'true' || val === 1 || val === '1' || 
+                    (typeof val === 'string' && val.toLowerCase() === 'yes')) {
+                    return 'Yes';
+                }
+                return 'No';
             }}
         ];
 
         fields.forEach(function(field) {
-            var value = getValueCaseInsensitive(data, field.key);
+            // Try each possible key name until we find a match
+            var value = null;
+            for (var i = 0; i < field.keys.length; i++) {
+                value = getValueCaseInsensitive(data, field.keys[i]);
+                if (value !== null && value !== undefined && value !== '') {
+                    break;
+                }
+            }
             var isEmpty = value === null || value === undefined || value === '';
 
             html += '<div class="detail-field">';
@@ -252,9 +275,18 @@ jQuery(document).ready(function($) {
             } else {
                 var displayValue = field.render ? field.render(value) : value;
 
-                // Handle URLs
-                if (field.key === 'link_url' && value) {
-                    html += '<div class="detail-value"><a href="' + escapeHtml(value) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(value) + '</a></div>';
+                // Handle URLs - check if this is the Link field
+                var isLinkField = field.keys.some(function(k) { 
+                    return k.toLowerCase() === 'link' || k.toLowerCase() === 'link_url' || k.toLowerCase() === 'link url';
+                });
+                if (isLinkField && value) {
+                    // Validate URL format
+                    var urlValue = String(value).trim();
+                    if (urlValue && (urlValue.startsWith('http://') || urlValue.startsWith('https://'))) {
+                        html += '<div class="detail-value"><a href="' + escapeHtml(urlValue) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(urlValue) + '</a></div>';
+                    } else {
+                        html += '<div class="detail-value">' + escapeHtml(String(displayValue)) + '</div>';
+                    }
                 } else {
                     html += '<div class="detail-value">' + escapeHtml(String(displayValue)) + '</div>';
                 }

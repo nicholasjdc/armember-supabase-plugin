@@ -19,41 +19,6 @@ jQuery(document).ready(function($) {
         $('#select-all-databases').prop('checked', totalCheckboxes === checkedCheckboxes);
     });
 
-    // Toggle advanced search
-    $('#toggle-advanced-search').on('click', function() {
-        var $advancedSection = $('.advanced-search');
-        var $icon = $(this).find('.dashicons');
-
-        if ($advancedSection.is(':visible')) {
-            $advancedSection.slideUp();
-            $icon.removeClass('dashicons-arrow-up-alt2').addClass('dashicons-arrow-down-alt2');
-            $(this).html('<span class="dashicons dashicons-arrow-down-alt2"></span> Show Advanced Search');
-        } else {
-            $advancedSection.slideDown();
-            $icon.removeClass('dashicons-arrow-down-alt2').addClass('dashicons-arrow-up-alt2');
-            $(this).html('<span class="dashicons dashicons-arrow-up-alt2"></span> Hide Advanced Search');
-        }
-    });
-
-    // Clear form
-    $('#clear-multi-search').on('click', function() {
-        // Clear all inputs
-        $('#multi-search-keyword').val('');
-        $('.advanced-search input').val('');
-        $('.database-select').prop('checked', false);
-        $('#select-all-databases').prop('checked', false);
-
-        // Hide results
-        $('.multi-search-results').hide();
-        $('#search-status-message').html('');
-
-        // Destroy DataTable if it exists
-        if (dataTable) {
-            dataTable.destroy();
-            dataTable = null;
-        }
-    });
-
     // Execute search
     $('#execute-multi-search').on('click', function() {
         executeSearch();
@@ -83,11 +48,10 @@ jQuery(document).ready(function($) {
 
         // Get search parameters
         var searchValue = $('#multi-search-keyword').val().trim();
-        var advancedFilters = getAdvancedFilters();
 
-        // Validate: either keyword or advanced filters must be provided
-        if (!searchValue && Object.keys(advancedFilters).length === 0) {
-            showMessage('Please enter search keywords or use advanced filters.', 'error');
+        // Validate: keyword must be provided
+        if (!searchValue) {
+            showMessage('Please enter search keywords.', 'error');
             return;
         }
 
@@ -95,7 +59,7 @@ jQuery(document).ready(function($) {
         showMessage('Searching across ' + selectedDatabases.length + ' database(s)...', 'info');
 
         // Initialize or reload DataTable
-        initializeDataTable(selectedDatabases, searchValue, advancedFilters);
+        initializeDataTable(selectedDatabases, searchValue);
 
         // Show results section
         $('.multi-search-results').show();
@@ -110,27 +74,9 @@ jQuery(document).ready(function($) {
     }
 
     /**
-     * Get advanced search filters
-     */
-    function getAdvancedFilters() {
-        var filters = {};
-
-        $('.advanced-search input[type="text"], .advanced-search input[type="number"]').each(function() {
-            var name = $(this).attr('name');
-            var value = $(this).val().trim();
-
-            if (value) {
-                filters[name] = value;
-            }
-        });
-
-        return filters;
-    }
-
-    /**
      * Initialize DataTables with server-side processing
      */
-    function initializeDataTable(databases, searchValue, advancedFilters) {
+    function initializeDataTable(databases, searchValue) {
         // Destroy existing table if it exists
         if (dataTable) {
             dataTable.destroy();
@@ -148,7 +94,6 @@ jQuery(document).ready(function($) {
                     // Add custom search parameters
                     d.databases = databases;
                     d.search_value = searchValue;
-                    d.advanced_filters = advancedFilters;
                 },
                 beforeSend: function(xhr) {
                     xhr.setRequestHeader('X-WP-Nonce', supabaseMultiSearch.nonce);
@@ -218,7 +163,8 @@ jQuery(document).ready(function($) {
             pageLength: 25,
             lengthMenu: [10, 25, 50, 100],
             order: [[0, 'asc']], // Sort by database source by default
-            dom: 'Bfrtip', // Add buttons to the DOM
+            dom: 'Brtip', // Add buttons to the DOM (removed 'f' for filter/search box)
+            searching: false, // Disable the search box
             buttons: [
                 {
                     extend: 'copyHtml5',
@@ -249,7 +195,6 @@ jQuery(document).ready(function($) {
             ],
             language: {
                 processing: '<span class="dashicons dashicons-update spin"></span> Searching databases...',
-                search: 'Filter results:',
                 lengthMenu: 'Show _MENU_ results per page',
                 info: 'Showing _START_ to _END_ of _TOTAL_ results',
                 infoEmpty: 'No results found',

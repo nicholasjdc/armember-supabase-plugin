@@ -450,12 +450,6 @@ textarea:focus {
 }
 
 /* DataTables Customization */
-.dataTables_wrapper .dataTables_filter input {
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-}
-
 .dataTables_wrapper .dataTables_length select {
     padding: 6px 10px;
     border: 1px solid #ddd;
@@ -538,7 +532,6 @@ textarea:focus {
 @media print {
     .multi-search-form,
     .dt-buttons,
-    .dataTables_filter,
     .dataTables_length,
     .dataTables_paginate {
         display: none !important;

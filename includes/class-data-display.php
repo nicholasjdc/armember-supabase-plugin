@@ -753,8 +753,6 @@ class Supabase_Data_Display {
     private function render_multi_search_interface($tables) {
         ob_start();
         ?>
-        <a href="#multi-search-form" class="skip-link">Skip to search form</a>
-        <a href="#multi-search-results-table" class="skip-link">Skip to search results</a>
         <div class="supabase-multi-search-wrapper">
             <div class="multi-search-form" id="multi-search-form">
                 <h3>Search Across Databases</h3>
@@ -792,70 +790,11 @@ class Supabase_Data_Display {
                     <p class="search-hint" id="search-hint">Tip: Enter names, places, dates, or any keywords to search</p>
                 </div>
 
-                <!-- Advanced Search Toggle -->
-                <div class="advanced-toggle">
-                    <button type="button" id="toggle-advanced-search" class="toggle-advanced-btn">
-                        <span class="dashicons dashicons-arrow-down-alt2"></span>
-                        Show Advanced Search
-                    </button>
-                </div>
-
-                <!-- Advanced Search Fields (Hidden by default) -->
-                <div class="advanced-search" style="display: none;" role="region" aria-labelledby="advanced-search-heading">
-                    <h4 id="advanced-search-heading">Advanced Search Filters:</h4>
-                    <div class="advanced-fields">
-                        <div class="field-group">
-                            <label for="first_name">First Name:</label>
-                            <input type="text" id="first_name" name="first_name" placeholder="Enter first name" aria-label="First name" />
-                        </div>
-                        <div class="field-group">
-                            <label for="last_name">Last Name / Surname:</label>
-                            <input type="text" id="last_name" name="last_name" placeholder="Enter last name or surname" aria-label="Last name or surname" />
-                        </div>
-                        <div class="field-group">
-                            <label id="birth-year-label">Birth Year Range:</label>
-                            <div class="date-range" role="group" aria-labelledby="birth-year-label">
-                                <label for="birth_year_from" class="screen-reader-text">Birth year from</label>
-                                <input type="number" id="birth_year_from" name="birth_year_from" placeholder="From" min="1000" max="2100" aria-label="Birth year from" />
-                                <span aria-hidden="true">to</span>
-                                <label for="birth_year_to" class="screen-reader-text">Birth year to</label>
-                                <input type="number" id="birth_year_to" name="birth_year_to" placeholder="To" min="1000" max="2100" aria-label="Birth year to" />
-                            </div>
-                        </div>
-                        <div class="field-group">
-                            <label id="death-year-label">Death Year Range:</label>
-                            <div class="date-range" role="group" aria-labelledby="death-year-label">
-                                <label for="death_year_from" class="screen-reader-text">Death year from</label>
-                                <input type="number" id="death_year_from" name="death_year_from" placeholder="From" min="1000" max="2100" aria-label="Death year from" />
-                                <span aria-hidden="true">to</span>
-                                <label for="death_year_to" class="screen-reader-text">Death year to</label>
-                                <input type="number" id="death_year_to" name="death_year_to" placeholder="To" min="1000" max="2100" aria-label="Death year to" />
-                            </div>
-                        </div>
-                        <div class="field-group">
-                            <label for="birth_place">Birth Place:</label>
-                            <input type="text" id="birth_place" name="birth_place" placeholder="Enter birth place or location" aria-label="Birth place" />
-                        </div>
-                        <div class="field-group">
-                            <label for="residence">Residence:</label>
-                            <input type="text" id="residence" name="residence" placeholder="Enter residence or location" aria-label="Residence" />
-                        </div>
-                        <div class="field-group">
-                            <label for="death_place">Death Place:</label>
-                            <input type="text" id="death_place" name="death_place" placeholder="Enter death place or location" aria-label="Death place" />
-                        </div>
-                    </div>
-                    <p class="advanced-hint" id="advanced-hint">Note: Advanced filters search for matching column names in each database. Not all databases may have all fields.</p>
-                </div>
-
                 <!-- Search Button -->
                 <div class="search-actions">
-                    <button type="button" id="execute-multi-search" class="button button-primary button-large" aria-describedby="search-hint advanced-hint">
+                    <button type="button" id="execute-multi-search" class="button button-primary button-large" aria-describedby="search-hint">
                         <span class="dashicons dashicons-search" aria-hidden="true"></span>
                         Search Databases
-                    </button>
-                    <button type="button" id="clear-multi-search" class="button button-secondary" aria-label="Clear search form and reset all fields">
-                        Clear Form
                     </button>
                 </div>
 

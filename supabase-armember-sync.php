@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Supabase ARMember Sync
  * Description: Syncs ARMember users with Supabase and displays member-only data
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Your Name
  * Text Domain: supabase-armember-sync
  */
@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('SUPABASE_ARMEMBER_VERSION', '1.0.0');
+define('SUPABASE_ARMEMBER_VERSION', '1.0.1');
 define('SUPABASE_ARMEMBER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SUPABASE_ARMEMBER_PLUGIN_URL', plugin_dir_url(__FILE__));
 
