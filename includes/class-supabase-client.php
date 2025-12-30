@@ -79,8 +79,29 @@ class Supabase_Client {
             unset($query_params['or']);
         }
 
-        // Build regular query string
-        $query_string = http_build_query($query_params);
+        // Build query string with special handling for .eq. filters that contain spaces/special chars
+        $query_parts = [];
+        foreach ($query_params as $key => $value) {
+            $encoded_key = rawurlencode($key);
+            
+            // For .eq. filters, ensure the value part is properly encoded
+            // PostgREST needs: column.eq.value where value with spaces/special chars must be encoded
+            if (strpos($value, 'eq.') === 0) {
+                // Extract the value after "eq."
+                $eq_value = substr($value, 3);
+                // Encode only the value part using rawurlencode (spaces become %20, not +)
+                // This ensures spaces and special chars like "/" are properly handled
+                $encoded_value = rawurlencode($eq_value);
+                // Don't encode again - the value is already encoded
+                $encoded_val = 'eq.' . $encoded_value;
+            } else {
+                // For other operators, encode normally
+                $encoded_val = rawurlencode($value);
+            }
+            
+            $query_parts[] = $encoded_key . '=' . $encoded_val;
+        }
+        $query_string = implode('&', $query_parts);
 
         // Add 'or' parameter manually with minimal encoding
         if ($or_param !== null) {

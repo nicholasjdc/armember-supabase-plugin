@@ -146,9 +146,9 @@ class Supabase_Library_Display {
                         </div>
 
                         <div class="search-field">
-                            <label for="search-geographic-area">Geographic Area</label>
-                            <select id="search-geographic-area" name="geographic_area" class="search-select">
-                                <option value="">All Areas</option>
+                            <label for="search-physical-location">Physical Location</label>
+                            <select id="search-physical-location" name="physical_location" class="search-select">
+                                <option value="">All Locations</option>
                                 <?php foreach ($geographic_areas as $area): ?>
                                     <option value="<?php echo esc_attr($area); ?>"><?php echo esc_html($area); ?></option>
                                 <?php endforeach; ?>
@@ -251,17 +251,9 @@ class Supabase_Library_Display {
         $title = $request->get_param('title');
         $author = $request->get_param('author');
         $keyword = $request->get_param('keyword');
-        $geographic_area = $request->get_param('geographic_area');
+        $physical_location = $request->get_param('physical_location');
         $new_only = $request->get_param('new');
 
-        // Debug logging
-        error_log('Library search params: ' . json_encode([
-            'title' => $title,
-            'author' => $author,
-            'keyword' => $keyword,
-            'geographic_area' => $geographic_area,
-            'new' => $new_only
-        ]));
 
         // DataTables parameters
         $draw = intval($request->get_param('draw') ?? 1);
@@ -303,10 +295,12 @@ class Supabase_Library_Display {
             }
         }
 
-        if (!empty($geographic_area)) {
-            $geo_col = $this->find_column($actual_columns, 'geographic_area');
-            if ($geo_col) {
-                $filters[] = $geo_col . '.eq.' . urlencode($geographic_area);
+        if (!empty($physical_location)) {
+            $physical_location_col = $this->find_column($actual_columns, 'Physical Location');
+            if ($physical_location_col) {
+                // For exact matching with spaces and special characters like "/"
+                // Use .eq. operator - the value will be properly encoded during query building
+                $filters[] = $physical_location_col . '.eq.' . $physical_location;
             }
         }
 
@@ -342,7 +336,6 @@ class Supabase_Library_Display {
         $filtered_count = $this->get_filtered_count($table_name, $filters, $actual_columns);
         
         // Debug logging
-        error_log('Library search counts - Total: ' . $total_count . ', Filtered: ' . $filtered_count);
 
         // Build query parameters for Supabase fetch method
         $query_params = [
@@ -372,15 +365,12 @@ class Supabase_Library_Display {
                 $parts = explode('.', $filter, 2);
                 if (count($parts) === 2) {
                     $column = $parts[0];
-                    $operatorAndValue = $parts[1]; // e.g., "ilike.*george*"
+                    $operatorAndValue = $parts[1]; // e.g., "eq.Branch A/B" or "ilike.*george*"
                     $query_params[$column] = $operatorAndValue;
                 }
             }
         }
 
-        // Debug logging
-        error_log('Library search filters: ' . json_encode($filters));
-        error_log('Library query params: ' . json_encode($query_params));
 
         // Fetch data
         $data = $this->supabase->fetch($table_name, $query_params);
@@ -522,7 +512,7 @@ class Supabase_Library_Display {
                 $parts = explode('.', $filter, 2);
                 if (count($parts) === 2) {
                     $column = $parts[0];
-                    $operatorAndValue = $parts[1]; // e.g., "ilike.*george*"
+                    $operatorAndValue = $parts[1]; // e.g., "eq.Branch A/B" or "ilike.*george*"
                     $count_params[$column] = $operatorAndValue;
                 }
             }

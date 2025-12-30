@@ -17,17 +17,10 @@ jQuery(document).ready(function($) {
                 d.title = $('#search-title').val();
                 d.author = $('#search-author').val();
                 d.keyword = $('#search-keyword').val();
-                d.geographic_area = $('#search-geographic-area').val();
+                d.physical_location = $('#search-physical-location').val();
                 d.new = $('#search-new').is(':checked') ? '1' : '';
 
                 // Debug logging
-                console.log('Search parameters:', {
-                    title: d.title,
-                    author: d.author,
-                    keyword: d.keyword,
-                    geographic_area: d.geographic_area,
-                    new: d.new
-                });
             },
             beforeSend: function(xhr) {
                 xhr.setRequestHeader('X-WP-Nonce', supabaseLibrary.nonce);
@@ -97,7 +90,6 @@ jQuery(document).ready(function($) {
     // Search form submission
     $(document).on('submit', '#library-search-form', function(e) {
         e.preventDefault();
-        console.log('Search form submitted');
         table.ajax.reload();
         return false;
     });
@@ -105,7 +97,6 @@ jQuery(document).ready(function($) {
     // Search button click (backup handler)
     $(document).on('click', '#library-search-form button[type="submit"]', function(e) {
         e.preventDefault();
-        console.log('Search button clicked');
         table.ajax.reload();
         return false;
     });
@@ -218,9 +209,6 @@ jQuery(document).ready(function($) {
      * Show item detail modal
      */
     function showItemDetail(data) {
-        // Debug: log the data structure to see what keys are available
-        console.log('Item detail data keys:', Object.keys(data));
-        console.log('Item detail data:', data);
         
         var titleValue = getValueCaseInsensitive(data, 'Title') || getValueCaseInsensitive(data, 'title') || 'Untitled';
         var html = '<h3>' + escapeHtml(titleValue) + '</h3>';

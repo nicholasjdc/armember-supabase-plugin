@@ -118,6 +118,10 @@ class Supabase_Admin_Page {
                    class="nav-tab <?php echo $active_tab === 'librarians' ? 'nav-tab-active' : ''; ?>">
                     Librarians
                 </a>
+                <a href="?page=supabase-armember&tab=logs"
+                   class="nav-tab <?php echo $active_tab === 'logs' ? 'nav-tab-active' : ''; ?>">
+                    Sync Logs
+                </a>
             </h2>
 
             <div class="tab-content">
@@ -128,6 +132,8 @@ class Supabase_Admin_Page {
                     $this->render_library_tab();
                 } elseif ($active_tab === 'librarians') {
                     $this->render_librarians_tab();
+                } elseif ($active_tab === 'logs') {
+                    $this->render_logs_tab();
                 } else {
                     $this->render_tables_tab();
                 }
@@ -467,20 +473,20 @@ class Supabase_Admin_Page {
             <form method="post" action="">
                 <?php wp_nonce_field('supabase_library_settings'); ?>
 
-                <h3>Geographic Areas</h3>
-                <p>Configure the geographic areas that appear in the library search dropdown. Enter one area per line.</p>
+                <h3>Physical Locations</h3>
+                <p>Configure the physical locations that appear in the library search dropdown. These values should match the "Physical Location" column in your database. Enter one location per line.</p>
 
                 <table class="form-table">
                     <tr>
                         <th scope="row">
-                            <label for="geographic_areas">Geographic Areas</label>
+                            <label for="geographic_areas">Physical Locations</label>
                         </th>
                         <td>
                             <textarea id="geographic_areas"
                                       name="geographic_areas"
                                       rows="10"
                                       class="large-text code"><?php echo esc_textarea(implode("\n", $geographic_areas)); ?></textarea>
-                            <p class="description">Enter one geographic area per line (e.g., North America, Europe, Asia)</p>
+                            <p class="description">Enter one physical location per line (e.g., Main Library, Branch A, Storage Room B). These values will be used to filter the "Physical Location" column in the database.</p>
                         </td>
                     </tr>
                 </table>
@@ -578,8 +584,8 @@ class Supabase_Admin_Page {
                         <td>Optional</td>
                     </tr>
                     <tr>
-                        <td><code>geographic_area</code></td>
-                        <td>Geographic area classification</td>
+                        <td><code>Physical Location</code></td>
+                        <td>Physical location of the item</td>
                         <td>Optional</td>
                     </tr>
                     <tr>
@@ -732,6 +738,155 @@ class Supabase_Admin_Page {
                     </td>
                 </tr>
             </table>
+        </div>
+        <?php
+    }
+
+    /**
+     * Render Sync Logs Tab
+     * Display ARMember sync logs from database
+     */
+    private function render_logs_tab() {
+        // Handle clear logs action
+        if (isset($_POST['clear_logs']) && check_admin_referer('supabase_clear_logs')) {
+            delete_option('supabase_sync_logs');
+            echo '<div class="notice notice-success"><p>Sync logs cleared successfully.</p></div>';
+        }
+
+        // Get logs from database
+        $all_logs = get_option('supabase_sync_logs', []);
+        
+        // Get the most recent entries for display (limit to 100 for performance)
+        $max_display_logs = 100;
+        $logs = array_slice($all_logs, 0, $max_display_logs);
+
+        ?>
+        <div class="sync-logs-page">
+            <h2>ARMember Sync Logs</h2>
+            
+            <p>View recent ARMember synchronization activity. Logs help diagnose issues with plan name detection and user syncing.</p>
+
+            <?php if (empty($logs)): ?>
+                <div class="notice notice-info">
+                    <p><strong>No sync logs found.</strong> This could mean:</p>
+                    <ul>
+                        <li>No users have been synced yet</li>
+                        <li>Logs have been cleared</li>
+                    </ul>
+                    <p>Try syncing a user (go to Settings tab and click "Sync All Users to Supabase") to generate log entries.</p>
+                </div>
+            <?php else: ?>
+                <div class="sync-logs-container">
+                    <div class="sync-logs-header">
+                        <p><strong><?php echo count($logs); ?></strong> recent sync log entries (showing most recent 100)</p>
+                        <p class="description">Logs are stored in the WordPress database and automatically managed.</p>
+                        <form method="post" action="" style="margin-top: 10px;">
+                            <?php wp_nonce_field('supabase_clear_logs'); ?>
+                            <button type="submit" name="clear_logs" class="button button-secondary" onclick="return confirm('Are you sure you want to clear all sync logs?');">
+                                Clear All Logs
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="sync-logs-content">
+                        <table class="wp-list-table widefat fixed striped">
+                            <thead>
+                                <tr>
+                                    <th style="width: 180px;">Timestamp</th>
+                                    <th>Log Entry</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($logs as $log_entry): ?>
+                                    <?php
+                                    // Extract timestamp and message from log entry array
+                                    $timestamp = isset($log_entry['timestamp']) ? $log_entry['timestamp'] : '';
+                                    $message = isset($log_entry['message']) ? $log_entry['message'] : '';
+                                    
+                                    // Remove [ARMember Sync] prefix if present for cleaner display
+                                    $message = str_replace('[ARMember Sync] ', '', $message);
+                                    
+                                    // Highlight different types of messages
+                                    $row_class = '';
+                                    if (strpos($message, 'Could not find plan name') !== false || strpos($message, 'Unknown') !== false) {
+                                        $row_class = 'warning';
+                                    } elseif (strpos($message, 'Found plan name') !== false) {
+                                        $row_class = 'success';
+                                    } elseif (strpos($message, 'Error') !== false || strpos($message, 'Failed') !== false) {
+                                        $row_class = 'error';
+                                    }
+                                    ?>
+                                    <tr class="<?php echo esc_attr($row_class); ?>">
+                                        <td>
+                                            <code style="font-size: 11px;"><?php echo esc_html($timestamp); ?></code>
+                                        </td>
+                                        <td>
+                                            <code style="background: transparent; padding: 0; font-size: 12px;"><?php echo esc_html($message); ?></code>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <style>
+                    .sync-logs-content .warning {
+                        background-color: #fff8e5;
+                    }
+                    .sync-logs-content .success {
+                        background-color: #f0f9ff;
+                    }
+                    .sync-logs-content .error {
+                        background-color: #fef2f2;
+                    }
+                    .sync-logs-container {
+                        margin-top: 20px;
+                    }
+                    .sync-logs-header {
+                        margin-bottom: 15px;
+                    }
+                </style>
+            <?php endif; ?>
+
+            <hr>
+
+            <h3>Understanding the Logs</h3>
+            <table class="form-table">
+                <tr>
+                    <th>Log Entry Type</th>
+                    <th>What It Means</th>
+                </tr>
+                <tr>
+                    <td><code>User ID: X, Plan IDs: [...]</code></td>
+                    <td>Shows which user is being synced and their plan IDs from ARMember</td>
+                </tr>
+                <tr>
+                    <td><code>Found plan name "X" for plan ID: Y</code></td>
+                    <td>Successfully retrieved the plan name from ARMember</td>
+                </tr>
+                <tr>
+                    <td><code>Could not find plan name for plan IDs: [...]</code></td>
+                    <td>Unable to retrieve plan name - this is why plans show as "Unknown"</td>
+                </tr>
+                <tr>
+                    <td><code>Post found - Type: X, Title: Y</code></td>
+                    <td>Debug info showing what post was found when looking up plan ID</td>
+                </tr>
+                <tr>
+                    <td><code>No post found for plan ID: X</code></td>
+                    <td>The plan ID doesn't correspond to a WordPress post</td>
+                </tr>
+                <tr>
+                    <td><code>Membership Plan: X</code></td>
+                    <td>The final plan name that was synced to Supabase</td>
+                </tr>
+            </table>
+
+            <p class="description">
+                <strong>Tip:</strong> If you see "Could not find plan name" entries, check the debug information that follows to understand why. 
+                The logs will show what methods were tried and what was found (or not found) when looking up the plan.
+            </p>
         </div>
         <?php
     }

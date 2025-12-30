@@ -419,14 +419,6 @@ class Supabase_Data_Display {
             }
         }
 
-        // Log for debugging - always log to help diagnose search issues
-        error_log('[DataTables Request] Table: ' . $table_name . ', Search: "' . $search_value . '", Columns: ' . count($columns));
-        if (!empty($columns) && is_array($columns)) {
-            $column_names = array_map(function($col) {
-                return is_array($col) && isset($col['data']) ? $col['data'] : 'unknown';
-            }, array_slice($columns, 0, 5)); // Log first 5 columns
-            error_log('[DataTables Request] First columns: ' . implode(', ', $column_names));
-        }
 
         // Get total count
         $total_count = $this->get_table_count($table_name);

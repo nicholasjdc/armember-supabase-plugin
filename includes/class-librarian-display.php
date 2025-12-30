@@ -429,8 +429,18 @@ class Supabase_Librarian_Display {
             'order' => 'Title.asc'
         ];
 
+        // Build filters for search
+        $filters = [];
+        if (!empty($search_value)) {
+            // Search in Title, Author, Publisher, Call Number
+            $encoded_search = urlencode($search_value);
+            $filters[] = 'or=(Title.ilike.*' . $encoded_search . '*,Author.ilike.*' . $encoded_search . '*,Publisher.ilike.*' . $encoded_search . '*)';
+        }
+
+        // Get filtered count
+        $filtered_count = $this->get_filtered_count($table_name, $filters);
+
         // Apply search if provided
-        $filtered_count = $total_count;
         if (!empty($search_value)) {
             // Search in Title, Author, Publisher, Call Number
             $encoded_search = urlencode($search_value);
@@ -499,9 +509,6 @@ class Supabase_Librarian_Display {
         // Add timestamp
         $record_data['Last Updated Date'] = current_time('Y-m-d');
 
-        // Debug logging
-        error_log('[Librarian Create] Table: ' . $table_name);
-        error_log('[Librarian Create] Data: ' . json_encode($record_data));
 
         // Insert into Supabase - URL encode table name for spaces
         $encoded_table = rawurlencode($table_name);
@@ -529,7 +536,6 @@ class Supabase_Librarian_Display {
         $status_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
 
-        error_log('[Librarian Create] Status: ' . $status_code . ', Body: ' . $body);
 
         if ($status_code >= 200 && $status_code < 300) {
             $created_record = json_decode($body, true);
@@ -589,9 +595,6 @@ class Supabase_Librarian_Display {
         // Add timestamp
         $record_data['Last Updated Date'] = current_time('Y-m-d');
 
-        // Debug logging
-        error_log('[Librarian Update] Table: ' . $table_name . ', Original Title: ' . $original_title);
-        error_log('[Librarian Update] Data: ' . json_encode($record_data));
 
         // Update in Supabase - use Title to identify the record
         $encoded_table = rawurlencode($table_name);
@@ -621,7 +624,6 @@ class Supabase_Librarian_Display {
         $status_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
 
-        error_log('[Librarian Update] Status: ' . $status_code . ', Body: ' . $body);
 
         if ($status_code >= 200 && $status_code < 300) {
             $updated_record = json_decode($body, true);
@@ -665,8 +667,6 @@ class Supabase_Librarian_Display {
             ], 400);
         }
 
-        // Debug logging
-        error_log('[Librarian Delete] Table: ' . $table_name . ', Title: ' . $title);
 
         // Delete from Supabase - use Title to identify the record
         $encoded_table = rawurlencode($table_name);
@@ -693,7 +693,6 @@ class Supabase_Librarian_Display {
         $status_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
 
-        error_log('[Librarian Delete] Status: ' . $status_code);
 
         if ($status_code >= 200 && $status_code < 300) {
             return new WP_REST_Response([
@@ -712,54 +711,56 @@ class Supabase_Librarian_Display {
 
     /**
      * Sanitize record data from request
-     * Uses exact column names from the SGS Library Records table
+     * Uses exact column names from the library table
      *
      * @param array $params Request parameters
-     * @param array $actual_columns Actual column names from the database (unused, kept for compatibility)
      * @return array Sanitized data with correct column names
      */
-    private function sanitize_record_data($params, $actual_columns = []) {
+    private function sanitize_record_data($params) {
         // Map form field names to exact Supabase column names
-        // SGS Library Records schema columns (with spaces preserved)
+        // Only include fields that need special handling or have different names
         $field_map = [
-            'Title' => 'Title',
-            'Author' => 'Author',
-            'Description' => 'Description',
-            'Publisher' => 'Publisher',
             'Publisher Location' => 'Publisher Location',
             'Pub. Year' => 'Pub. Year',
             'Reprint Year' => 'Reprint Year',
-            'Location' => 'Location',
             'Media Type' => 'Media Type',
             'Call Number' => 'Call Number',
-            'ISBN' => 'ISBN',
             'Physical Location' => 'Physical Location',
             'SPL Collection' => 'SPL Collection',
-            'Link' => 'Link',
             'Acq. Year' => 'Acq. Year',
-            'Donor' => 'Donor',
             'Librarian Notes' => 'Librarian Notes',
-            'New' => 'New',
-            'updatedByName' => 'updatedByName',
             'Last Updated Date' => 'Last Updated Date'
         ];
+        
+        // Fields that match exactly can be added directly
+        $direct_fields = ['Title', 'Author', 'Description', 'Publisher', 'Location', 'ISBN', 'Link', 'Donor', 'New', 'updatedByName'];
 
         $data = [];
 
+        // Process mapped fields (those with special handling or different names)
         foreach ($field_map as $form_field => $db_column) {
             if (isset($params[$form_field]) && $params[$form_field] !== '') {
                 $value = $params[$form_field];
 
-                // Special handling for URL fields
-                if ($form_field === 'Link') {
-                    $data[$db_column] = esc_url_raw($value);
-                }
                 // Special handling for numeric fields
-                elseif ($form_field === 'Pub. Year') {
+                if ($form_field === 'Pub. Year') {
                     $data[$db_column] = intval($value);
-                }
-                else {
+                } else {
                     $data[$db_column] = sanitize_text_field($value);
+                }
+            }
+        }
+
+        // Process direct fields (form field name matches database column name)
+        foreach ($direct_fields as $field) {
+            if (isset($params[$field]) && $params[$field] !== '') {
+                $value = $params[$field];
+                
+                // Special handling for URL fields
+                if ($field === 'Link') {
+                    $data[$field] = esc_url_raw($value);
+                } else {
+                    $data[$field] = sanitize_text_field($value);
                 }
             }
         }
@@ -795,6 +796,116 @@ class Supabase_Librarian_Display {
         }
 
         return '';
+    }
+
+    /**
+     * Get total row count for the table
+     *
+     * @param string $table_name
+     * @return int
+     */
+    private function get_table_count($table_name) {
+        // Get count from cached table info
+        $table_info = $this->library_manager->get_library_table_info();
+
+        if ($table_info && isset($table_info['row_count'])) {
+            return intval($table_info['row_count']);
+        }
+
+        // Fallback: return 0 if no cached count
+        return 0;
+    }
+
+    /**
+     * Get filtered row count
+     *
+     * @param string $table_name
+     * @param array $filters Filter strings in the same format as data query
+     * @return int
+     */
+    private function get_filtered_count($table_name, $filters) {
+        if (empty($filters)) {
+            return $this->get_table_count($table_name);
+        }
+
+        // Build query parameters for count query (same format as data query)
+        $count_params = [];
+        
+        // Add filters to count query params (same logic as data query)
+        foreach ($filters as $filter) {
+            // Filters can be in two formats:
+            // 1. "key=value" (e.g., "or=(Title.ilike.*george*)")
+            // 2. "column.operator.value" (e.g., "Title.ilike.*george*")
+
+            if (strpos($filter, '=') !== false) {
+                // Format: key=value
+                list($key, $value) = explode('=', $filter, 2);
+                $count_params[$key] = $value;
+            } else {
+                // Format: column.operator.value
+                // Extract column name (everything before first dot)
+                $parts = explode('.', $filter, 2);
+                if (count($parts) === 2) {
+                    $column = $parts[0];
+                    $operatorAndValue = $parts[1]; // e.g., "ilike.*george*"
+                    $count_params[$column] = $operatorAndValue;
+                }
+            }
+        }
+
+        // Use Supabase count endpoint with filters (same as fetch method)
+        // Build query string - special handling for 'or' parameter
+        $query_params = array_merge(['select' => '*'], $count_params);
+
+        // Extract 'or' parameter if present for special handling (same as fetch method)
+        $or_param = null;
+        if (isset($query_params['or'])) {
+            $or_param = $query_params['or'];
+            unset($query_params['or']);
+        }
+
+        // Build regular query string
+        $query_string = http_build_query($query_params);
+
+        // Add 'or' parameter manually with minimal encoding (same as fetch method)
+        if ($or_param !== null) {
+            $or_param_encoded = str_replace(' ', '%20', $or_param);
+            $query_string .= ($query_string ? '&' : '') . 'or=' . $or_param_encoded;
+        }
+
+        $encoded_table = rawurlencode($table_name);
+        $endpoint = $this->supabase->url . '/rest/v1/' . $encoded_table;
+        if (!empty($query_string)) {
+            $endpoint .= '?' . $query_string;
+        }
+
+
+        $response = wp_remote_get($endpoint, [
+            'headers' => [
+                'apikey' => $this->supabase->key,
+                'Authorization' => 'Bearer ' . $this->supabase->key,
+                'Prefer' => 'count=exact',
+                'Range' => '0-0' // Only get headers, not data
+            ],
+            'timeout' => 15
+        ]);
+
+        if (is_wp_error($response)) {
+            error_log('Error getting librarian filtered count: ' . $response->get_error_message());
+            // Fallback to total count if query fails
+            return $this->get_table_count($table_name);
+        }
+
+        $headers = wp_remote_retrieve_headers($response);
+        $count = 0;
+
+        if (isset($headers['content-range'])) {
+            if (preg_match('/\/(\d+)$/', $headers['content-range'], $matches)) {
+                $count = (int) $matches[1];
+            }
+        }
+
+        return $count;
     }
 }
 
