@@ -5,10 +5,35 @@
 jQuery(document).ready(function($) {
     'use strict';
 
-    // Initialize DataTable
+    // Track if a valid search has been performed
+    var hasSearched = false;
+
+    /**
+     * Check if at least one search field has data
+     */
+    function hasSearchCriteria() {
+        var title = $('#search-title').val().trim();
+        var author = $('#search-author').val().trim();
+        var keyword = $('#search-keyword').val().trim();
+        var physicalLocation = $('#search-physical-location').val();
+        var newOnly = $('#search-new').is(':checked');
+
+        return title !== '' || author !== '' || keyword !== '' || physicalLocation !== '' || newOnly;
+    }
+
+    /**
+     * Show empty search message
+     */
+    function showEmptySearchMessage() {
+        // Update the table to show the "enter search criteria" message
+        table.clear().draw();
+    }
+
+    // Initialize DataTable - deferLoading: 0 prevents initial AJAX call
     var table = $('#library-results-table').DataTable({
         processing: true,
         serverSide: true,
+        deferLoading: 0, // Don't load any data on initial page load
         ajax: {
             url: supabaseLibrary.apiUrl,
             type: 'GET',
@@ -23,9 +48,17 @@ jQuery(document).ready(function($) {
                 // Debug logging
             },
             beforeSend: function(xhr) {
+                // Block the request if no search criteria
+                if (!hasSearchCriteria()) {
+                    return false; // Abort the AJAX request
+                }
                 xhr.setRequestHeader('X-WP-Nonce', supabaseLibrary.nonce);
             },
             error: function(xhr, error, thrown) {
+                // Ignore aborted requests (when we block empty searches)
+                if (error === 'abort') {
+                    return;
+                }
                 console.error('DataTables error:', error, thrown);
                 console.error('Response:', xhr.responseText);
                 alert('Error loading library data. Please try again.');
@@ -68,13 +101,13 @@ jQuery(document).ready(function($) {
         pageLength: 25,
         lengthMenu: [[10, 25, 50, 100], [10, 25, 50, 100]],
         language: {
-            emptyTable: 'No items found in the library catalog',
+            emptyTable: 'Please enter search criteria above to find items in the library catalog.',
             zeroRecords: 'No matching items found',
             info: 'Showing _START_ to _END_ of _TOTAL_ items',
             infoEmpty: 'Showing 0 to 0 of 0 items',
             infoFiltered: '(filtered from _MAX_ total items)',
             lengthMenu: 'Show _MENU_ items per page',
-            search: 'Quick search:',
+            search: 'Search Results:',
             paginate: {
                 first: 'First',
                 last: 'Last',
@@ -87,16 +120,18 @@ jQuery(document).ready(function($) {
         order: [[0, 'asc']]
     });
 
-    // Search form submission
-    $(document).on('submit', '#library-search-form', function(e) {
+    // Search form submission - single unified handler
+    $('#library-search-form').on('submit', function(e) {
         e.preventDefault();
-        table.ajax.reload();
-        return false;
-    });
+        e.stopPropagation();
 
-    // Search button click (backup handler)
-    $(document).on('click', '#library-search-form button[type="submit"]', function(e) {
-        e.preventDefault();
+        // Validate that at least one field has data
+        if (!hasSearchCriteria()) {
+            alert('Please enter at least one search criterion (title, author, keyword, location, or new items).');
+            return false;
+        }
+
+        hasSearched = true;
         table.ajax.reload();
         return false;
     });
@@ -104,8 +139,11 @@ jQuery(document).ready(function($) {
     // Clear search button
     $('#clear-search').on('click', function(e) {
         e.preventDefault();
+        e.stopPropagation();
         $('#library-search-form')[0].reset();
-        table.ajax.reload();
+        hasSearched = false;
+        // Clear the table and show the initial message
+        table.clear().draw();
     });
 
     // Trigger search on input change (with debounce) - DISABLED for explicit search
@@ -215,6 +253,8 @@ jQuery(document).ready(function($) {
 
         // Field definitions with labels - matching actual Supabase schema
         // Each field can have multiple possible key names to try
+        // Note: Donor, Librarian Notes, Updated By, Last Updated Date, and New Item
+        // are hidden from the public catalog (they are still visible in the librarian interface)
         var fields = [
             { keys: ['Author'], label: 'Author' },
             { keys: ['Description'], label: 'Description' },
@@ -229,19 +269,7 @@ jQuery(document).ready(function($) {
             { keys: ['Physical Location', 'PhysicalLocation', 'physical_location'], label: 'Physical Location' },
             { keys: ['SPL Collection', 'SPLCollection', 'spl_collection'], label: 'SPL Collection' },
             { keys: ['Link', 'link_url', 'Link URL'], label: 'Link' },
-            { keys: ['Acq. Year', 'Acq Year', 'Acquisition Year', 'acquisition_date', 'acq_year'], label: 'Acquisition Year' },
-            { keys: ['Donor', 'donor_or_purchase', 'Donor or Purchase'], label: 'Donor' },
-            { keys: ['Librarian Notes', 'LibrarianNotes', 'librarian_notes'], label: 'Librarian Notes' },
-            { keys: ['updatedByName', 'updated_by', 'Updated By'], label: 'Updated By' },
-            { keys: ['Last Updated Date', 'LastUpdatedDate', 'updated', 'last_updated_date'], label: 'Last Updated Date' },
-            { keys: ['New'], label: 'New Item', render: function(val) {
-                // Handle text values: "Yes", "No", true, false, 1, 0, etc.
-                if (val === true || val === 'true' || val === 1 || val === '1' || 
-                    (typeof val === 'string' && val.toLowerCase() === 'yes')) {
-                    return 'Yes';
-                }
-                return 'No';
-            }}
+            { keys: ['Acq. Year', 'Acq Year', 'Acquisition Year', 'acquisition_date', 'acq_year'], label: 'Acquisition Year' }
         ];
 
         fields.forEach(function(field) {

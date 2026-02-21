@@ -16,7 +16,7 @@ class Supabase_Librarian_Display {
     public function __construct() {
         $this->supabase = new Supabase_Client();
         $this->library_manager = new Supabase_Library_Manager();
-
+        
         // Register shortcode
         add_shortcode('supabase_librarian', [$this, 'render_librarian_interface']);
 

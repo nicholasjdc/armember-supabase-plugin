@@ -26,6 +26,9 @@ class Supabase_Admin_Page {
         add_action('wp_ajax_supabase_delete_table_page', [$this, 'ajax_delete_table_page']);
         add_action('wp_ajax_supabase_toggle_table_lock', [$this, 'ajax_toggle_table_lock']);
         add_action('wp_ajax_supabase_set_library_table', [$this, 'ajax_set_library_table']);
+        add_action('wp_ajax_supabase_set_pdf_column', [$this, 'ajax_set_pdf_column']);
+        add_action('wp_ajax_supabase_toggle_table_searchable', [$this, 'ajax_toggle_table_searchable']);
+        add_action('wp_ajax_supabase_set_table_search_fields', [$this, 'ajax_set_table_search_fields']);
 
         // Enqueue admin scripts
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
@@ -320,6 +323,7 @@ class Supabase_Admin_Page {
                             <th>Columns</th>
                             <th>Locked</th>
                             <th>Library</th>
+                            <th>PDF Column</th>
                             <th>Page Status</th>
                             <th>Actions</th>
                         </tr>
@@ -330,6 +334,7 @@ class Supabase_Admin_Page {
                             $page = $this->get_table_page($table['table_name']);
                             $page_exists = $page !== null;
                             $is_library = ($library_table === $table['table_name']);
+                            $pdf_column = $table['pdf_column'] ?? '';
                             ?>
                             <tr data-table="<?php echo esc_attr($table['table_name']); ?>">
                                 <td><strong><?php echo esc_html($table['table_name']); ?></strong></td>
@@ -364,6 +369,19 @@ class Supabase_Admin_Page {
                                         </button>
                                     <?php endif; ?>
                                 </td>
+                                <td class="pdf-column-cell">
+                                    <select class="pdf-column-select" 
+                                            data-table="<?php echo esc_attr($table['table_name']); ?>"
+                                            style="min-width: 150px;">
+                                        <option value="">-- None --</option>
+                                        <?php foreach ($table['columns'] as $column): ?>
+                                            <option value="<?php echo esc_attr($column['column_name']); ?>"
+                                                    <?php selected($pdf_column, $column['column_name']); ?>>
+                                                <?php echo esc_html($column['column_name']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </td>
                                 <td>
                                     <?php if ($page_exists): ?>
                                         <span class="dashicons dashicons-yes-alt" style="color: green;"></span>
@@ -390,7 +408,7 @@ class Supabase_Admin_Page {
                                 </td>
                             </tr>
                             <tr class="column-details" id="columns-<?php echo esc_attr($table['table_name']); ?>" style="display:none;">
-                                <td colspan="6">
+                                <td colspan="8">
                                     <div class="columns-list">
                                         <h4>Columns for <?php echo esc_html($table['table_name']); ?>:</h4>
                                         <ul>
@@ -410,6 +428,116 @@ class Supabase_Admin_Page {
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+
+                <!-- General Search Settings Card -->
+                <div class="general-search-settings-card" style="margin-top: 30px; padding: 20px; background: #fff; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
+                    <h3 style="margin-top: 0;">
+                        <span class="dashicons dashicons-search" style="margin-right: 5px;"></span>
+                        General Search Settings
+                    </h3>
+                    <p class="description">
+                        Select which databases appear as options in the General Search (<code>[supabase_multi_search]</code> shortcode).
+                        Unchecked databases will not be available for searching.
+                    </p>
+
+                    <div class="general-search-checkboxes" style="margin-top: 15px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px;">
+                        <?php foreach ($tables as $table): ?>
+                            <?php
+                            $is_searchable = $table['is_searchable'] ?? true; // Default to searchable
+                            ?>
+                            <label style="display: flex; align-items: center; padding: 8px 12px; background: #f9f9f9; border: 1px solid #e5e5e5; border-radius: 4px; cursor: pointer;">
+                                <input type="checkbox"
+                                       class="table-searchable-checkbox"
+                                       data-table="<?php echo esc_attr($table['table_name']); ?>"
+                                       <?php checked($is_searchable, true); ?>
+                                       style="margin-right: 10px;" />
+                                <span>
+                                    <strong><?php echo esc_html(ucwords(str_replace('_', ' ', $table['table_name']))); ?></strong>
+                                    <span style="color: #666; font-size: 12px; display: block;">
+                                        <?php echo number_format($table['row_count']); ?> records
+                                    </span>
+                                </span>
+                            </label>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <p class="description" style="margin-top: 15px;">
+                        <strong>Note:</strong> Changes are saved automatically when you check or uncheck a database.
+                    </p>
+                </div>
+
+                <!-- General Search Field Visibility Card -->
+                <?php
+                $first_table = reset($tables);
+                $default_table_name = (is_array($first_table) && isset($first_table['table_name'])) ? $first_table['table_name'] : '';
+                ?>
+                <div class="search-fields-settings-card" style="margin-top: 20px; padding: 20px; background: #fff; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
+                    <h3 style="margin-top: 0;">
+                        <span class="dashicons dashicons-visibility" style="margin-right: 5px;"></span>
+                        General Search Field Visibility
+                    </h3>
+                    <p class="description">
+                        Choose which fields are shown (and searched) for each database in the General Search
+                        (<code>[supabase_multi_search]</code> shortcode).
+                    </p>
+
+                    <div class="search-fields-table-selector" style="margin-top: 15px;">
+                        <label for="search-fields-table-select"><strong>Select database:</strong></label>
+                        <select id="search-fields-table-select" style="min-width: 260px; margin-left: 10px;">
+                            <?php foreach ($tables as $table): ?>
+                                <option value="<?php echo esc_attr($table['table_name']); ?>"
+                                        <?php selected($table['table_name'], $default_table_name); ?>>
+                                    <?php echo esc_html(ucwords(str_replace('_', ' ', $table['table_name']))); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="search-fields-lists-wrapper" style="margin-top: 15px;">
+                        <?php foreach ($tables as $table): ?>
+                            <?php
+                            $table_name = $table['table_name'];
+                            $selected_search_fields = $this->get_table_search_fields($table);
+                            $is_active_table = ($table_name === $default_table_name);
+                            ?>
+                            <div class="table-search-fields-list"
+                                 data-table="<?php echo esc_attr($table_name); ?>"
+                                 style="<?php echo $is_active_table ? '' : 'display:none;'; ?>">
+                                <div class="search-fields-selection-count" style="margin-bottom: 10px; color: #666;">
+                                    <?php echo count($selected_search_fields); ?> of <?php echo count($table['columns']); ?> fields selected
+                                </div>
+                                <div class="search-fields-checkboxes" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px;">
+                                    <?php foreach ($table['columns'] as $column): ?>
+                                        <?php
+                                        $column_name = $column['column_name'] ?? '';
+                                        if ($column_name === '') {
+                                            continue;
+                                        }
+                                        ?>
+                                        <label style="display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; background: #f9f9f9; border: 1px solid #e5e5e5; border-radius: 4px; cursor: pointer;">
+                                            <input type="checkbox"
+                                                   class="table-search-field-checkbox"
+                                                   data-table="<?php echo esc_attr($table_name); ?>"
+                                                   value="<?php echo esc_attr($column_name); ?>"
+                                                   <?php checked(in_array($column_name, $selected_search_fields, true)); ?> />
+                                            <span>
+                                                <strong><?php echo esc_html($column_name); ?></strong>
+                                                <span style="color: #666; font-size: 12px; display: block;">
+                                                    <?php echo esc_html($column['data_type'] ?? 'unknown type'); ?>
+                                                </span>
+                                            </span>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <p class="description" style="margin-top: 15px;">
+                        <strong>Note:</strong> Changes are saved automatically when you check or uncheck fields. At least one field must remain selected.
+                    </p>
+                </div>
+
             <?php endif; ?>
 
         <?php endif; ?>
@@ -982,16 +1110,38 @@ class Supabase_Admin_Page {
             wp_send_json_error(['message' => 'Failed to fetch tables from Supabase. Check your configuration and error logs.']);
         }
 
-        // Preserve lock states from existing tables
+        // Preserve lock states, PDF column designations, searchability, and search field selections from existing tables
         $old_tables = get_option('supabase_schema_tables', []);
         $lock_states = [];
+        $pdf_columns = [];
+        $searchable_states = [];
+        $search_fields = [];
         foreach ($old_tables as $old_table) {
             $lock_states[$old_table['table_name']] = $old_table['is_locked'] ?? true;
+            $searchable_states[$old_table['table_name']] = $old_table['is_searchable'] ?? true;
+            if (isset($old_table['pdf_column'])) {
+                $pdf_columns[$old_table['table_name']] = $old_table['pdf_column'];
+            }
+            if (isset($old_table['search_fields']) && is_array($old_table['search_fields'])) {
+                $search_fields[$old_table['table_name']] = $old_table['search_fields'];
+            }
         }
 
-        // Apply old lock states to synced tables, new tables default to locked
+        // Apply old lock states, searchability, PDF column designations, and search fields to synced tables
+        // New tables default to locked and searchable
         foreach ($tables as &$table) {
             $table['is_locked'] = $lock_states[$table['table_name']] ?? true;
+            $table['is_searchable'] = $searchable_states[$table['table_name']] ?? true;
+            if (isset($pdf_columns[$table['table_name']])) {
+                $table['pdf_column'] = $pdf_columns[$table['table_name']];
+            }
+            if (isset($search_fields[$table['table_name']])) {
+                $available_columns = $this->get_table_column_names($table);
+                $valid_search_fields = $this->sanitize_table_search_fields($search_fields[$table['table_name']], $available_columns);
+                if (!empty($valid_search_fields)) {
+                    $table['search_fields'] = $valid_search_fields;
+                }
+            }
         }
 
         update_option('supabase_schema_tables', $tables);
@@ -1144,6 +1294,185 @@ class Supabase_Admin_Page {
     }
 
     /**
+     * AJAX handler for setting PDF column designation
+     */
+    public function ajax_set_pdf_column() {
+        check_ajax_referer('supabase_admin', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Insufficient permissions']);
+        }
+
+        $table_name = isset($_POST['table']) ? sanitize_text_field($_POST['table']) : '';
+        $pdf_column = isset($_POST['pdf_column']) ? sanitize_text_field($_POST['pdf_column']) : '';
+
+        if (empty($table_name)) {
+            wp_send_json_error(['message' => 'Table name required']);
+        }
+
+        $tables = get_option('supabase_schema_tables', []);
+        $found = false;
+
+        foreach ($tables as &$table) {
+            if ($table['table_name'] === $table_name) {
+                // Validate that the column exists in this table
+                if (!empty($pdf_column)) {
+                    $column_exists = false;
+                    foreach ($table['columns'] as $column) {
+                        if ($column['column_name'] === $pdf_column) {
+                            $column_exists = true;
+                            break;
+                        }
+                    }
+                    if (!$column_exists) {
+                        wp_send_json_error(['message' => 'Column not found in table']);
+                    }
+                }
+                // Set or unset the pdf_column
+                if (!empty($pdf_column)) {
+                    $table['pdf_column'] = $pdf_column;
+                } else {
+                    // Remove the pdf_column designation if empty
+                    unset($table['pdf_column']);
+                }
+                $found = true;
+                break;
+            }
+        }
+
+        if (!$found) {
+            wp_send_json_error(['message' => 'Table not found']);
+        }
+
+        $result = update_option('supabase_schema_tables', $tables);
+        
+        // Log for debugging (remove in production if needed)
+        if ($result === false) {
+            error_log('Failed to update supabase_schema_tables option');
+        }
+
+        wp_send_json_success([
+            'message' => 'PDF column designation updated',
+            'table' => $table_name,
+            'pdf_column' => $pdf_column
+        ]);
+    }
+
+    /**
+     * AJAX handler for setting searchable/displayed fields per table (General Search)
+     */
+    public function ajax_set_table_search_fields() {
+        check_ajax_referer('supabase_admin', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Insufficient permissions']);
+        }
+
+        $table_name = isset($_POST['table']) ? sanitize_text_field($_POST['table']) : '';
+        $submitted_fields = isset($_POST['search_fields']) ? (array) $_POST['search_fields'] : [];
+
+        if (empty($table_name)) {
+            wp_send_json_error(['message' => 'Table name required']);
+        }
+
+        $tables = get_option('supabase_schema_tables', []);
+        $found = false;
+
+        foreach ($tables as &$table) {
+            if ($table['table_name'] === $table_name) {
+                $available_columns = $this->get_table_column_names($table);
+                $valid_fields = $this->sanitize_table_search_fields($submitted_fields, $available_columns);
+
+                if (empty($valid_fields)) {
+                    wp_send_json_error(['message' => 'At least one field must be selected']);
+                }
+
+                $table['search_fields'] = $valid_fields;
+                $found = true;
+                break;
+            }
+        }
+
+        if (!$found) {
+            wp_send_json_error(['message' => 'Table not found']);
+        }
+
+        update_option('supabase_schema_tables', $tables);
+
+        wp_send_json_success([
+            'message' => 'Search fields updated',
+            'table' => $table_name,
+            'search_fields' => $valid_fields
+        ]);
+    }
+
+    /**
+     * Get column names for a table definition.
+     */
+    private function get_table_column_names($table) {
+        if (!isset($table['columns']) || !is_array($table['columns'])) {
+            return [];
+        }
+
+        $columns = [];
+        foreach ($table['columns'] as $column) {
+            if (isset($column['column_name']) && $column['column_name'] !== '') {
+                $columns[] = $column['column_name'];
+            }
+        }
+
+        return $columns;
+    }
+
+    /**
+     * Sanitize and validate selected search fields against available columns.
+     */
+    private function sanitize_table_search_fields($search_fields, $available_columns) {
+        if (!is_array($search_fields) || empty($available_columns)) {
+            return [];
+        }
+
+        $available_lookup = array_fill_keys($available_columns, true);
+        $sanitized_fields = [];
+
+        foreach ($search_fields as $field) {
+            if (!is_scalar($field)) {
+                continue;
+            }
+
+            $field_name = sanitize_text_field((string) $field);
+            if ($field_name === '') {
+                continue;
+            }
+
+            if (isset($available_lookup[$field_name]) && !in_array($field_name, $sanitized_fields, true)) {
+                $sanitized_fields[] = $field_name;
+            }
+        }
+
+        return $sanitized_fields;
+    }
+
+    /**
+     * Get selected search fields for a table, defaulting to all columns.
+     */
+    private function get_table_search_fields($table) {
+        $available_columns = $this->get_table_column_names($table);
+        if (empty($available_columns)) {
+            return [];
+        }
+
+        $selected_fields = isset($table['search_fields']) ? $table['search_fields'] : [];
+        $valid_selected_fields = $this->sanitize_table_search_fields($selected_fields, $available_columns);
+
+        if (!empty($valid_selected_fields)) {
+            return $valid_selected_fields;
+        }
+
+        return $available_columns;
+    }
+
+    /**
      * Get existing page for a table
      */
     private function get_table_page($table_name) {
@@ -1170,19 +1499,24 @@ class Supabase_Admin_Page {
                    '<p>Click on a database below to view its complete records:</p>';
 
         if ($page) {
-            // Update existing page to include shortcode if not already present
+            // Update existing page to include shortcode if not already present, and update title
+            $update_data = [];
             if (strpos($page->post_content, '[supabase_multi_search]') === false) {
-                wp_update_post([
-                    'ID' => $page->ID,
-                    'post_content' => $content
-                ]);
+                $update_data['post_content'] = $content;
+            }
+            if ($page->post_title !== 'Databases Lookup') {
+                $update_data['post_title'] = 'Databases Lookup';
+            }
+            if (!empty($update_data)) {
+                $update_data['ID'] = $page->ID;
+                wp_update_post($update_data);
             }
             return $page->ID;
         }
 
         // Create new page with shortcode
         $page_id = wp_insert_post([
-            'post_title' => 'Databases',
+            'post_title' => 'Databases Lookup',
             'post_content' => $content,
             'post_status' => 'publish',
             'post_type' => 'page',
@@ -1299,5 +1633,46 @@ class Supabase_Admin_Page {
         } else {
             wp_send_json_error(['message' => 'Invalid action']);
         }
+    }
+
+    /**
+     * AJAX handler for toggling table searchability (General Search visibility)
+     */
+    public function ajax_toggle_table_searchable() {
+        check_ajax_referer('supabase_admin', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Insufficient permissions']);
+        }
+
+        $table_name = isset($_POST['table']) ? sanitize_text_field($_POST['table']) : '';
+        $is_searchable = isset($_POST['is_searchable']) ? (bool)$_POST['is_searchable'] : false;
+
+        if (empty($table_name)) {
+            wp_send_json_error(['message' => 'Table name required']);
+        }
+
+        $tables = get_option('supabase_schema_tables', []);
+        $found = false;
+
+        foreach ($tables as &$table) {
+            if ($table['table_name'] === $table_name) {
+                $table['is_searchable'] = $is_searchable;
+                $found = true;
+                break;
+            }
+        }
+
+        if (!$found) {
+            wp_send_json_error(['message' => 'Table not found']);
+        }
+
+        update_option('supabase_schema_tables', $tables);
+
+        wp_send_json_success([
+            'message' => 'Searchability updated',
+            'table' => $table_name,
+            'is_searchable' => $is_searchable
+        ]);
     }
 }

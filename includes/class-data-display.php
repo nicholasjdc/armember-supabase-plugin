@@ -193,16 +193,20 @@ class Supabase_Data_Display {
                 continue;
             }
 
+            $search_fields = $this->get_table_search_fields($table_schema);
+
             // Build search parameters
             $params = ['limit' => 1000]; // Limit per database for performance
 
             // Build search query
             if (!empty($search_value) && empty($advanced_filters)) {
                 // Simple keyword search
-                $search_conditions = $this->build_simple_search($table_schema['columns'], $search_value);
-                if (!empty($search_conditions)) {
-                    $params['or'] = '(' . implode(',', $search_conditions) . ')';
+                $search_conditions = $this->build_simple_search($table_schema['columns'], $search_value, $search_fields);
+                if (empty($search_conditions)) {
+                    // No text-compatible selected fields to search in this table.
+                    continue;
                 }
+                $params['or'] = '(' . implode(',', $search_conditions) . ')';
             } elseif (!empty($advanced_filters) && is_array($advanced_filters)) {
                 // Advanced search
                 $filter_conditions = $this->build_advanced_search($table_schema['columns'], $advanced_filters);
@@ -215,12 +219,13 @@ class Supabase_Data_Display {
             $results = $this->supabase->fetch($database, $params);
 
             if ($results && is_array($results)) {
-                // Add source database to each result
-                foreach ($results as &$result) {
-                    $result['_source_database'] = $database;
-                    $result['_source_database_display'] = ucwords(str_replace('_', ' ', $database));
+                // Add source database metadata and filter to selected fields
+                foreach ($results as $result) {
+                    $filtered_result = $this->filter_search_result_fields($result, $table_schema, $search_fields);
+                    $filtered_result['_source_database'] = $database;
+                    $filtered_result['_source_database_display'] = ucwords(str_replace('_', ' ', $database));
+                    $all_results[] = $filtered_result;
                 }
-                $all_results = array_merge($all_results, $results);
             }
         }
 
@@ -230,11 +235,20 @@ class Supabase_Data_Display {
     /**
      * Build simple search conditions for Supabase
      */
-    private function build_simple_search($columns, $search_value) {
+    private function build_simple_search($columns, $search_value, $allowed_fields = []) {
         $search_conditions = [];
         $search_value = sanitize_text_field($search_value);
         // URL encode the search value for PostgREST
         $encoded_search_value = urlencode($search_value);
+        $allowed_field_lookup = [];
+
+        if (!empty($allowed_fields) && is_array($allowed_fields)) {
+            foreach ($allowed_fields as $field_name) {
+                if (is_string($field_name) && $field_name !== '') {
+                    $allowed_field_lookup[$field_name] = true;
+                }
+            }
+        }
 
         // Text-compatible data types
         $text_types = ['text', 'character varying', 'varchar', 'char', 'character', 'citext', 'uuid', 'name'];
@@ -242,6 +256,10 @@ class Supabase_Data_Display {
         foreach ($columns as $column) {
             $col_name = $column['column_name'];
             $data_type = strtolower($column['data_type']);
+
+            if (!empty($allowed_field_lookup) && !isset($allowed_field_lookup[$col_name])) {
+                continue;
+            }
 
             // Only search text-like columns
             $is_text = false;
@@ -258,6 +276,73 @@ class Supabase_Data_Display {
         }
 
         return $search_conditions;
+    }
+
+    /**
+     * Get selected search fields for a table schema, defaulting to all table columns.
+     */
+    private function get_table_search_fields($table_schema) {
+        $available_fields = [];
+        if (isset($table_schema['columns']) && is_array($table_schema['columns'])) {
+            foreach ($table_schema['columns'] as $column) {
+                if (isset($column['column_name']) && $column['column_name'] !== '') {
+                    $available_fields[] = $column['column_name'];
+                }
+            }
+        }
+
+        if (empty($available_fields)) {
+            return [];
+        }
+
+        if (!isset($table_schema['search_fields']) || !is_array($table_schema['search_fields'])) {
+            return $available_fields;
+        }
+
+        $available_lookup = array_fill_keys($available_fields, true);
+        $selected_fields = [];
+        foreach ($table_schema['search_fields'] as $field_name) {
+            if (!is_string($field_name) || $field_name === '') {
+                continue;
+            }
+            if (isset($available_lookup[$field_name]) && !in_array($field_name, $selected_fields, true)) {
+                $selected_fields[] = $field_name;
+            }
+        }
+
+        if (!empty($selected_fields)) {
+            return $selected_fields;
+        }
+
+        return $available_fields;
+    }
+
+    /**
+     * Filter result data to selected search/display fields for the table.
+     */
+    private function filter_search_result_fields($result, $table_schema, $search_fields) {
+        if (!is_array($result)) {
+            return [];
+        }
+
+        $selected_fields = $search_fields;
+        if (empty($selected_fields)) {
+            $selected_fields = $this->get_table_search_fields($table_schema);
+        }
+
+        $filtered_result = [];
+        foreach ($selected_fields as $field_name) {
+            if (array_key_exists($field_name, $result)) {
+                $filtered_result[$field_name] = $result[$field_name];
+            }
+        }
+
+        $pdf_column = isset($table_schema['pdf_column']) ? $table_schema['pdf_column'] : '';
+        if (!empty($pdf_column) && array_key_exists($pdf_column, $result)) {
+            $filtered_result['_pdf_url'] = $result[$pdf_column];
+        }
+
+        return $filtered_result;
     }
 
     /**
@@ -706,8 +791,14 @@ class Supabase_Data_Display {
             return $this->render_message('Search is temporarily unavailable. Please try again later.', 'error');
         }
 
-        // Filter tables by access permissions
+        // Filter tables by access permissions AND searchability setting
         $tables = array_filter($all_tables, function($table) {
+            // First check if table is marked as searchable (defaults to true for backwards compatibility)
+            $is_searchable = $table['is_searchable'] ?? true;
+            if (!$is_searchable) {
+                return false; // Table is not enabled for general search
+            }
+
             $is_locked = $table['is_locked'] ?? true;
 
             // Unlocked tables visible to all
@@ -816,7 +907,8 @@ class Supabase_Data_Display {
             restUrl: '<?php echo esc_url(rest_url('supabase/v1/multi-search')); ?>',
             nonce: '<?php echo wp_create_nonce('wp_rest'); ?>',
             availableTables: <?php echo json_encode($tables); ?>,
-            tablePageUrls: <?php echo json_encode($this->get_table_page_urls($tables)); ?>
+            tablePageUrls: <?php echo json_encode($this->get_table_page_urls($tables)); ?>,
+            tablePdfColumns: <?php echo json_encode($this->get_table_pdf_columns($tables)); ?>
         };
         </script>
         <?php
@@ -846,6 +938,23 @@ class Supabase_Data_Display {
         }
 
         return $urls;
+    }
+
+    /**
+     * Get PDF column mappings for tables
+     * Returns an array mapping table names to their PDF column names
+     */
+    private function get_table_pdf_columns($tables) {
+        $pdf_columns = [];
+
+        foreach ($tables as $table) {
+            $table_name = $table['table_name'];
+            if (isset($table['pdf_column']) && !empty($table['pdf_column'])) {
+                $pdf_columns[$table_name] = $table['pdf_column'];
+            }
+        }
+
+        return $pdf_columns;
     }
 
     /**
@@ -920,11 +1029,20 @@ class Supabase_Data_Display {
             true
         );
 
+        // PDF.js for rendering PDFs as printable canvas elements
+        wp_enqueue_script(
+            'pdfjs',
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+            [],
+            '3.11.174',
+            true
+        );
+
         // Multi-search custom JS
         wp_enqueue_script(
             'supabase-multi-search',
             SUPABASE_ARMEMBER_PLUGIN_URL . 'public/js/multi-search.js',
-            ['jquery', 'datatables', 'datatables-buttons', 'datatables-buttons-html5'],
+            ['jquery', 'datatables', 'datatables-buttons', 'datatables-buttons-html5', 'pdfjs'],
             SUPABASE_ARMEMBER_VERSION,
             true
         );

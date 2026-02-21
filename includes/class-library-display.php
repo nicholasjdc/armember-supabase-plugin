@@ -289,9 +289,19 @@ class Supabase_Library_Display {
         }
 
         if (!empty($keyword)) {
-            $keyword_col = $this->find_column($actual_columns, 'keyword');
-            if ($keyword_col) {
-                $filters[] = $keyword_col . '.ilike.*' . $keyword . '*';
+            // Keyword searches across multiple fields (title, author, description, publisher)
+            $keyword_search_columns = ['title', 'author', 'description', 'publisher'];
+            $keyword_filters = [];
+            
+            foreach ($keyword_search_columns as $col_name) {
+                $col = $this->find_column($actual_columns, $col_name);
+                if ($col) {
+                    $keyword_filters[] = $col . '.ilike.*' . $keyword . '*';
+                }
+            }
+            
+            if (!empty($keyword_filters)) {
+                $filters[] = 'or=(' . implode(',', $keyword_filters) . ')';
             }
         }
 
