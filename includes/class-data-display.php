@@ -1205,6 +1205,41 @@ class Supabase_Data_Display {
             </table>
         </div>
 
+        <?php if (!empty($image_columns)): ?>
+        <div id="<?php echo esc_attr($table_id); ?>-image-modal"
+             class="supabase-image-modal supabase-image-modal-hidden"
+             role="dialog" aria-modal="true"
+             aria-labelledby="<?php echo esc_attr($table_id); ?>-image-modal-title"
+             aria-hidden="true">
+            <div class="supabase-image-modal-overlay" aria-hidden="true"></div>
+            <div class="supabase-image-modal-container">
+                <div class="supabase-image-modal-header">
+                    <h2 id="<?php echo esc_attr($table_id); ?>-image-modal-title" class="supabase-image-modal-title">Image</h2>
+                    <a href="#" class="supabase-image-open-link" target="_blank" rel="noopener" aria-label="Open image in new tab">
+                        <span class="dashicons dashicons-external" aria-hidden="true"></span> Open
+                    </a>
+                    <button type="button" class="supabase-image-modal-close" aria-label="Close image viewer">
+                        <span class="dashicons dashicons-no-alt" aria-hidden="true"></span>
+                        <span class="supabase-sr-only">Close</span>
+                    </button>
+                </div>
+                <div class="supabase-image-modal-body">
+                    <div class="supabase-image-loading">
+                        <span class="dashicons dashicons-update spin" aria-hidden="true"></span>
+                        <p>Loading image...</p>
+                    </div>
+                    <div class="supabase-image-error" style="display:none;">
+                        <p class="supabase-image-error-text"></p>
+                        <a href="#" class="supabase-image-open-link-err" target="_blank" rel="noopener">Open in new tab</a>
+                    </div>
+                    <div class="supabase-image-display-container" style="display:none;">
+                        <img class="supabase-image-display" src="" alt="Record image">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <script type="text/javascript">
         jQuery(document).ready(function($) {
             var tableName = '<?php echo esc_js($table_name); ?>';
@@ -1238,7 +1273,7 @@ class Supabase_Data_Display {
                         }, $image_columns)); ?>],
                         render: function(data, type, row) {
                             if (type === 'display' && data) {
-                                return '<a href="' + data + '" target="_blank" rel="noopener">View Image</a>';
+                                return '<button type="button" class="button button-small supabase-view-image-btn" data-image-url="' + data.replace(/"/g, '&quot;') + '" aria-label="View image in popup">View Image</button>';
                             }
                             return data;
                         }
@@ -1262,6 +1297,69 @@ class Supabase_Data_Display {
                     }
                 }
             });
+
+            <?php if (!empty($image_columns)): ?>
+            // Image viewer modal
+            var $imgModal = $('#<?php echo esc_js($table_id); ?>-image-modal');
+            var $imgTrigger = null;
+
+            $('#<?php echo esc_js($table_id); ?>').on('click', '.supabase-view-image-btn', function(e) {
+                e.preventDefault();
+                $imgTrigger = $(this);
+                openSupabaseImageModal($imgModal, $(this).data('image-url'));
+            });
+
+            $imgModal.on('click', '.supabase-image-modal-close, .supabase-image-modal-overlay', function(e) {
+                e.preventDefault();
+                closeSupabaseImageModal($imgModal);
+            });
+
+            $imgModal.on('keydown', function(e) {
+                if (e.key === 'Escape' || e.keyCode === 27) {
+                    e.preventDefault();
+                    closeSupabaseImageModal($imgModal);
+                }
+            });
+
+            function openSupabaseImageModal($modal, imageUrl) {
+                var $img     = $modal.find('.supabase-image-display');
+                var $wrap    = $modal.find('.supabase-image-display-container');
+                var $loading = $modal.find('.supabase-image-loading');
+                var $error   = $modal.find('.supabase-image-error');
+
+                $loading.show();
+                $error.hide();
+                $wrap.hide();
+                $img.attr('src', '');
+                $modal.find('.supabase-image-open-link, .supabase-image-open-link-err').attr('href', imageUrl);
+
+                $modal.removeClass('supabase-image-modal-hidden').addClass('supabase-image-modal-visible');
+                $modal.attr('aria-hidden', 'false');
+                $('body').addClass('supabase-image-modal-open');
+                $modal.find('.supabase-image-modal-close').focus();
+
+                var tmp = new Image();
+                tmp.onload = function() {
+                    $loading.hide();
+                    $img.attr('src', imageUrl);
+                    $wrap.show();
+                };
+                tmp.onerror = function() {
+                    $loading.hide();
+                    $error.find('.supabase-image-error-text').text('Could not load image. It may be unavailable or access restricted.');
+                    $error.show();
+                };
+                tmp.src = imageUrl;
+            }
+
+            function closeSupabaseImageModal($modal) {
+                $modal.removeClass('supabase-image-modal-visible').addClass('supabase-image-modal-hidden');
+                $modal.attr('aria-hidden', 'true');
+                $('body').removeClass('supabase-image-modal-open');
+                if ($imgTrigger && $imgTrigger.length) { $imgTrigger.focus(); }
+                $imgTrigger = null;
+            }
+            <?php endif; ?>
         });
         </script>
         <?php
@@ -1416,6 +1514,157 @@ class Supabase_Data_Display {
             }
             .supabase-table tr:hover {
                 background-color: #f9f9f9;
+            }
+            /* Screen-reader only utility used by image modal close button */
+            .supabase-sr-only {
+                position: absolute;
+                left: -10000px;
+                width: 1px;
+                height: 1px;
+                overflow: hidden;
+                clip: rect(1px, 1px, 1px, 1px);
+                white-space: nowrap;
+            }
+            /* Image viewer modal — mirrors PDF modal pattern */
+            .supabase-image-modal {
+                position: fixed;
+                top: 0; left: 0;
+                width: 100%; height: 100%;
+                z-index: 100000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .supabase-image-modal-hidden  { visibility: hidden; opacity: 0; pointer-events: none; }
+            .supabase-image-modal-visible { visibility: visible; opacity: 1; pointer-events: auto; }
+            .supabase-image-modal-overlay {
+                position: absolute;
+                top: 0; left: 0;
+                width: 100%; height: 100%;
+                background: rgba(0,0,0,0.82);
+                cursor: pointer;
+            }
+            .supabase-image-modal-container {
+                position: relative;
+                background: #1a1a1a;
+                border-radius: 8px;
+                box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+                max-width: 92vw;
+                max-height: 92vh;
+                display: flex;
+                flex-direction: column;
+                z-index: 1;
+                overflow: hidden;
+            }
+            .supabase-image-modal-header {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                padding: 0.6rem 1rem;
+                background: #2a2a2a;
+                border-bottom: 1px solid #444;
+                flex-shrink: 0;
+            }
+            .supabase-image-modal-title {
+                margin: 0;
+                font-size: 1rem;
+                font-weight: 600;
+                color: #eee;
+                flex: 1;
+            }
+            .supabase-image-open-link {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.25rem;
+                padding: 0.3rem 0.7rem;
+                background: #0073aa;
+                color: #fff;
+                text-decoration: none;
+                border-radius: 4px;
+                font-size: 0.82rem;
+                white-space: nowrap;
+            }
+            .supabase-image-open-link:hover,
+            .supabase-image-open-link:focus {
+                background: #005a87;
+                color: #fff;
+                outline: 2px solid #fff;
+                outline-offset: 2px;
+            }
+            .supabase-image-modal-close {
+                background: transparent;
+                border: none;
+                padding: 0.35rem;
+                cursor: pointer;
+                color: #aaa;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 4px;
+                min-width: 32px;
+                min-height: 32px;
+            }
+            .supabase-image-modal-close:hover,
+            .supabase-image-modal-close:focus {
+                background: #444;
+                color: #fff;
+                outline: 2px solid #0073aa;
+                outline-offset: 2px;
+            }
+            .supabase-image-modal-close .dashicons {
+                width: 20px; height: 20px; font-size: 20px;
+            }
+            .supabase-image-modal-body {
+                flex: 1;
+                overflow: auto;
+                padding: 1.25rem;
+                min-height: 160px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .supabase-image-loading {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 0.6rem;
+                color: #bbb;
+                text-align: center;
+            }
+            .supabase-image-loading .dashicons {
+                width: 40px; height: 40px; font-size: 40px; color: #888;
+            }
+            .supabase-image-loading p { margin: 0; font-size: 0.9rem; }
+            .supabase-image-error {
+                text-align: center;
+                padding: 1.5rem;
+                background: #2a2a2a;
+                border-radius: 6px;
+                color: #ccc;
+            }
+            .supabase-image-error-text {
+                color: #f99; margin-bottom: 0.6rem; font-weight: 500;
+            }
+            .supabase-image-open-link-err { color: #7ab8e8; text-decoration: underline; }
+            .supabase-image-display-container {
+                max-width: 100%; max-height: 100%;
+                display: flex; align-items: center; justify-content: center;
+            }
+            .supabase-image-display {
+                max-width: 88vw;
+                max-height: 80vh;
+                object-fit: contain;
+                border-radius: 4px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+                display: block;
+            }
+            body.supabase-image-modal-open { overflow: hidden; }
+            @media (max-width: 600px) {
+                .supabase-image-modal-container { max-width: 98vw; max-height: 98vh; }
+                .supabase-image-display { max-width: 96vw; max-height: 72vh; }
+            }
+            @media (prefers-reduced-motion: reduce) {
+                .supabase-image-modal { transition: none !important; }
             }
         </style>';
     }
