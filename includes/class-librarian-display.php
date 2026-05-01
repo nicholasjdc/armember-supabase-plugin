@@ -58,6 +58,19 @@ class Supabase_Librarian_Display {
     }
 
     /**
+     * Returns a WP_Error if the current user has exceeded 60 requests/minute, null otherwise.
+     */
+    private function check_rate_limit() {
+        $key = 'supabase_rl_' . get_current_user_id();
+        $count = (int) get_transient($key);
+        if ($count >= 60) {
+            return new WP_Error('rate_limited', 'Too many requests. Please wait a moment.', ['status' => 429]);
+        }
+        set_transient($key, $count + 1, 60);
+        return null;
+    }
+
+    /**
      * Check if the current user has librarian permission
      * Used for REST API permission callbacks
      *
@@ -398,6 +411,11 @@ class Supabase_Librarian_Display {
      * Handle GET request for records (DataTable server-side processing)
      */
     public function handle_get_records($request) {
+        $rate_limit_error = $this->check_rate_limit();
+        if ($rate_limit_error) {
+            return $rate_limit_error;
+        }
+
         if (!$this->library_manager->has_library_table()) {
             return new WP_REST_Response([
                 'error' => 'Library table not configured'
@@ -485,6 +503,11 @@ class Supabase_Librarian_Display {
      * Handle POST request to create a new record
      */
     public function handle_create_record($request) {
+        $rate_limit_error = $this->check_rate_limit();
+        if ($rate_limit_error) {
+            return $rate_limit_error;
+        }
+
         if (!$this->library_manager->has_library_table()) {
             return new WP_REST_Response([
                 'success' => false,
@@ -559,6 +582,11 @@ class Supabase_Librarian_Display {
      * Since SGS Library Records has no primary key, we use Title to identify records
      */
     public function handle_update_record($request) {
+        $rate_limit_error = $this->check_rate_limit();
+        if ($rate_limit_error) {
+            return $rate_limit_error;
+        }
+
         if (!$this->library_manager->has_library_table()) {
             return new WP_REST_Response([
                 'success' => false,
@@ -647,6 +675,11 @@ class Supabase_Librarian_Display {
      * Since SGS Library Records has no primary key, we use Title to identify records
      */
     public function handle_delete_record($request) {
+        $rate_limit_error = $this->check_rate_limit();
+        if ($rate_limit_error) {
+            return $rate_limit_error;
+        }
+
         if (!$this->library_manager->has_library_table()) {
             return new WP_REST_Response([
                 'success' => false,

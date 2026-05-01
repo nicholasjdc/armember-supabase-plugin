@@ -31,3 +31,6 @@ vendor/
 .env
 .env.local
 .env.*.local
+
+#Local Only Docs
+.docs.local

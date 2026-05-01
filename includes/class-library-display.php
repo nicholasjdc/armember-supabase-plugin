@@ -34,8 +34,51 @@ class Supabase_Library_Display {
         register_rest_route('supabase/v1', '/library-search', [
             'methods' => 'GET',
             'callback' => [$this, 'handle_library_search'],
-            'permission_callback' => '__return_true'
+            'permission_callback' => [$this, 'check_library_search_permission']
         ]);
+    }
+
+    /**
+     * Returns a WP_Error if the current user has exceeded 30 requests/minute, null otherwise.
+     */
+    private function check_rate_limit() {
+        if (!is_user_logged_in()) {
+            return null;
+        }
+        $key = 'supabase_rl_' . get_current_user_id();
+        $count = (int) get_transient($key);
+        if ($count >= 30) {
+            return new WP_Error('rate_limited', 'Too many requests. Please wait before searching again.', ['status' => 429]);
+        }
+        set_transient($key, $count + 1, 60);
+        return null;
+    }
+
+    /**
+     * Permission callback for the library-search REST endpoint.
+     * Unlocked tables are publicly accessible; locked tables require a paid membership.
+     */
+    public function check_library_search_permission() {
+        $table_info = $this->library_manager->get_library_table_info();
+        $is_locked = $table_info['is_locked'] ?? true;
+
+        if (!$is_locked) {
+            return true;
+        }
+
+        if (!is_user_logged_in()) {
+            return new WP_Error('rest_forbidden', 'Authentication required', ['status' => 401]);
+        }
+
+        if (current_user_can('manage_options')) {
+            return true;
+        }
+
+        if (!(bool) get_user_meta(get_current_user_id(), 'supabase_access', true)) {
+            return new WP_Error('rest_forbidden', 'Paid membership required', ['status' => 403]);
+        }
+
+        return true;
     }
 
     /**
@@ -214,6 +257,11 @@ class Supabase_Library_Display {
      * @return WP_REST_Response
      */
     public function handle_library_search($request) {
+        $rate_limit_error = $this->check_rate_limit();
+        if ($rate_limit_error) {
+            return $rate_limit_error;
+        }
+
         try {
             if (!$this->library_manager->has_library_table()) {
                 return new WP_REST_Response([
@@ -230,22 +278,6 @@ class Supabase_Library_Display {
             }
 
             $table_name = $table_info['table_name'];
-            $is_locked = $table_info['is_locked'] ?? true;
-
-        // Check access for locked tables
-        if ($is_locked) {
-            if (!is_user_logged_in()) {
-                return new WP_REST_Response([
-                    'error' => 'Authentication required'
-                ], 401);
-            }
-
-            if (!$this->has_database_access()) {
-                return new WP_REST_Response([
-                    'error' => 'Paid membership required'
-                ], 403);
-            }
-        }
 
         // Get search parameters
         $title = $request->get_param('title');

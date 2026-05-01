@@ -274,6 +274,9 @@ class Supabase_Sync_Handler {
             ));
             
             if ($table_exists) {
+                if (!$this->is_safe_sql_identifier($table_name) || !$this->is_safe_sql_identifier($query_info['name_col']) || !$this->is_safe_sql_identifier($query_info['id_col'])) {
+                    continue;
+                }
                 // Try to get plan name
                 $result = $wpdb->get_var($wpdb->prepare(
                     "SELECT `{$query_info['name_col']}` FROM `{$table_name}` WHERE `{$query_info['id_col']}` = %d LIMIT 1",
@@ -322,7 +325,7 @@ class Supabase_Sync_Handler {
                 }
             }
             
-            if ($id_col && $name_col) {
+            if ($id_col && $name_col && $this->is_safe_sql_identifier($table_name) && $this->is_safe_sql_identifier($id_col) && $this->is_safe_sql_identifier($name_col)) {
                 $result = $wpdb->get_var($wpdb->prepare(
                     "SELECT `{$name_col}` FROM `{$table_name}` WHERE `{$id_col}` = %d LIMIT 1",
                     $plan_id
@@ -336,6 +339,15 @@ class Supabase_Sync_Handler {
         }
         
         return null;
+    }
+
+    /**
+     * Validate that a string is safe to interpolate as a backtick-quoted SQL identifier.
+     * Rejects anything containing a backtick, which is the only character that can break
+     * backtick quoting in MySQL/MariaDB.
+     */
+    private function is_safe_sql_identifier($identifier) {
+        return is_string($identifier) && strlen($identifier) > 0 && strpos($identifier, '`') === false;
     }
 
     /**

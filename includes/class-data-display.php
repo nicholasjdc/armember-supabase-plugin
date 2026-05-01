@@ -93,9 +93,30 @@ class Supabase_Data_Display {
     }
 
     /**
+     * Returns a WP_Error if the current user has exceeded 30 requests/minute, null otherwise.
+     */
+    private function check_rate_limit() {
+        if (!is_user_logged_in()) {
+            return null;
+        }
+        $key = 'supabase_rl_' . get_current_user_id();
+        $count = (int) get_transient($key);
+        if ($count >= 30) {
+            return new WP_Error('rate_limited', 'Too many requests. Please wait before searching again.', ['status' => 429]);
+        }
+        set_transient($key, $count + 1, 60);
+        return null;
+    }
+
+    /**
      * REST API endpoint for multi-database search
      */
     public function handle_multi_search_request($request) {
+        $rate_limit_error = $this->check_rate_limit();
+        if ($rate_limit_error) {
+            return $rate_limit_error;
+        }
+
         // Get search parameters
         $databases = $request->get_param('databases');
         $search_value = $request->get_param('search_value');
@@ -251,7 +272,7 @@ class Supabase_Data_Display {
         }
 
         // Text-compatible data types
-        $text_types = ['text', 'character varying', 'varchar', 'char', 'character', 'citext', 'uuid', 'name'];
+        $text_types = ['text', 'character varying', 'varchar', 'char', 'character', 'bpchar', 'citext', 'uuid', 'name'];
 
         foreach ($columns as $column) {
             $col_name = $column['column_name'];
@@ -459,6 +480,11 @@ class Supabase_Data_Display {
      * REST API endpoint for DataTables server-side processing
      */
     public function get_table_data_for_datatables($request) {
+        $rate_limit_error = $this->check_rate_limit();
+        if ($rate_limit_error) {
+            return $rate_limit_error;
+        }
+
         $table_name = $request->get_param('table');
 
         // DataTables parameters - safely extract nested values
@@ -1084,10 +1110,8 @@ class Supabase_Data_Display {
         }
 
         if (!$table_schema || empty($table_schema['columns'])) {
-            // Fallback: if no schema info, assume all columns could be text
-            // This is not ideal but better than failing completely
-            error_log('[Search] No schema info found for table, allowing all columns');
-            return $column_names;
+            error_log('[Search] No schema found for table "' . $table_name . '" — run "Sync Tables" in admin. Skipping search to avoid ilike errors on non-text columns.');
+            return [];
         }
 
         // Build map of column name to data type
@@ -1103,9 +1127,10 @@ class Supabase_Data_Display {
             'varchar',
             'char',
             'character',
-            'citext', // case-insensitive text
-            'uuid',   // UUIDs are stored as text-like
-            'name',   // PostgreSQL system type, text-like
+            'bpchar',  // PostgreSQL internal name for blank-padded char
+            'citext',  // case-insensitive text
+            'uuid',    // UUIDs are stored as text-like
+            'name',    // PostgreSQL system type, text-like
         ];
 
         // Filter to only text-compatible columns
