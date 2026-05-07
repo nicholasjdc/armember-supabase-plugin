@@ -27,6 +27,7 @@ class Supabase_Admin_Page {
         add_action('wp_ajax_supabase_toggle_table_lock', [$this, 'ajax_toggle_table_lock']);
         add_action('wp_ajax_supabase_set_library_table', [$this, 'ajax_set_library_table']);
         add_action('wp_ajax_supabase_set_pdf_column', [$this, 'ajax_set_pdf_column']);
+        add_action('wp_ajax_supabase_set_image_columns', [$this, 'ajax_set_image_columns']);
         add_action('wp_ajax_supabase_toggle_table_searchable', [$this, 'ajax_toggle_table_searchable']);
         add_action('wp_ajax_supabase_set_table_search_fields', [$this, 'ajax_set_table_search_fields']);
 
@@ -324,6 +325,7 @@ class Supabase_Admin_Page {
                             <th>Locked</th>
                             <th>Library</th>
                             <th>PDF Column</th>
+                            <th>Image Columns</th>
                             <th>Page Status</th>
                             <th>Actions</th>
                         </tr>
@@ -335,6 +337,11 @@ class Supabase_Admin_Page {
                             $page_exists = $page !== null;
                             $is_library = ($library_table === $table['table_name']);
                             $pdf_column = $table['pdf_column'] ?? '';
+                            $available_column_names = $this->get_table_column_names($table);
+                            $image_columns = $this->sanitize_table_search_fields(
+                                isset($table['image_columns']) ? $table['image_columns'] : [],
+                                $available_column_names
+                            );
                             ?>
                             <tr data-table="<?php echo esc_attr($table['table_name']); ?>">
                                 <td><strong><?php echo esc_html($table['table_name']); ?></strong></td>
@@ -370,7 +377,7 @@ class Supabase_Admin_Page {
                                     <?php endif; ?>
                                 </td>
                                 <td class="pdf-column-cell">
-                                    <select class="pdf-column-select" 
+                                    <select class="pdf-column-select"
                                             data-table="<?php echo esc_attr($table['table_name']); ?>"
                                             style="min-width: 150px;">
                                         <option value="">-- None --</option>
@@ -381,6 +388,21 @@ class Supabase_Admin_Page {
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
+                                </td>
+                                <td class="image-columns-cell">
+                                    <select class="image-columns-select"
+                                            data-table="<?php echo esc_attr($table['table_name']); ?>"
+                                            multiple
+                                            size="4"
+                                            style="min-width: 180px;">
+                                        <?php foreach ($table['columns'] as $column): ?>
+                                            <option value="<?php echo esc_attr($column['column_name']); ?>"
+                                                    <?php selected(in_array($column['column_name'], $image_columns, true), true); ?>>
+                                                <?php echo esc_html($column['column_name']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <p class="description" style="margin: 4px 0 0; font-size: 11px;">Hold Ctrl/Cmd to select multiple. URLs in these columns render as a "View Image" button.</p>
                                 </td>
                                 <td>
                                     <?php if ($page_exists): ?>
@@ -408,7 +430,7 @@ class Supabase_Admin_Page {
                                 </td>
                             </tr>
                             <tr class="column-details" id="columns-<?php echo esc_attr($table['table_name']); ?>" style="display:none;">
-                                <td colspan="8">
+                                <td colspan="9">
                                     <div class="columns-list">
                                         <h4>Columns for <?php echo esc_html($table['table_name']); ?>:</h4>
                                         <ul>
@@ -1110,10 +1132,11 @@ class Supabase_Admin_Page {
             wp_send_json_error(['message' => 'Failed to fetch tables from Supabase. Check your configuration and error logs.']);
         }
 
-        // Preserve lock states, PDF column designations, searchability, and search field selections from existing tables
+        // Preserve lock states, PDF column designations, image column designations, searchability, and search field selections from existing tables
         $old_tables = get_option('supabase_schema_tables', []);
         $lock_states = [];
         $pdf_columns = [];
+        $image_columns_map = [];
         $searchable_states = [];
         $search_fields = [];
         foreach ($old_tables as $old_table) {
@@ -1122,18 +1145,28 @@ class Supabase_Admin_Page {
             if (isset($old_table['pdf_column'])) {
                 $pdf_columns[$old_table['table_name']] = $old_table['pdf_column'];
             }
+            if (isset($old_table['image_columns']) && is_array($old_table['image_columns'])) {
+                $image_columns_map[$old_table['table_name']] = $old_table['image_columns'];
+            }
             if (isset($old_table['search_fields']) && is_array($old_table['search_fields'])) {
                 $search_fields[$old_table['table_name']] = $old_table['search_fields'];
             }
         }
 
-        // Apply old lock states, searchability, PDF column designations, and search fields to synced tables
+        // Apply old lock states, searchability, PDF column designations, image columns, and search fields to synced tables
         // New tables default to locked and searchable
         foreach ($tables as &$table) {
             $table['is_locked'] = $lock_states[$table['table_name']] ?? true;
             $table['is_searchable'] = $searchable_states[$table['table_name']] ?? true;
             if (isset($pdf_columns[$table['table_name']])) {
                 $table['pdf_column'] = $pdf_columns[$table['table_name']];
+            }
+            if (isset($image_columns_map[$table['table_name']])) {
+                $available_columns = $this->get_table_column_names($table);
+                $valid_image_columns = $this->sanitize_table_search_fields($image_columns_map[$table['table_name']], $available_columns);
+                if (!empty($valid_image_columns)) {
+                    $table['image_columns'] = $valid_image_columns;
+                }
             }
             if (isset($search_fields[$table['table_name']])) {
                 $available_columns = $this->get_table_column_names($table);
@@ -1180,9 +1213,16 @@ class Supabase_Admin_Page {
             wp_send_json_error(['message' => 'Failed to create or find parent page']);
         }
 
+        $shortcode = '[supabase_table table="' . $table_name . '"';
+        $configured_image_columns = $this->get_table_image_columns($table_name);
+        if (!empty($configured_image_columns)) {
+            $shortcode .= ' image_columns="' . esc_attr(implode(',', $configured_image_columns)) . '"';
+        }
+        $shortcode .= ']';
+
         $page_id = wp_insert_post([
             'post_title' => ucwords(str_replace('_', ' ', $table_name)),
-            'post_content' => '[supabase_table table="' . $table_name . '"]',
+            'post_content' => $shortcode,
             'post_status' => 'draft',
             'post_type' => 'page',
             'post_parent' => $parent_id,
@@ -1232,7 +1272,11 @@ class Supabase_Admin_Page {
         }
 
         // Additional safety: verify the page contains the table shortcode
-        if (strpos($page->post_content, '[supabase_table table="' . $table_name . '"]') === false) {
+        // (matches both [supabase_table table="X"] and [supabase_table table="X" ...attrs])
+        $shortcode_with_close = '[supabase_table table="' . $table_name . '"]';
+        $shortcode_with_attrs = '[supabase_table table="' . $table_name . '" ';
+        if (strpos($page->post_content, $shortcode_with_close) === false
+            && strpos($page->post_content, $shortcode_with_attrs) === false) {
             wp_send_json_error(['message' => 'Page does not appear to be associated with this table']);
         }
 
@@ -1359,6 +1403,55 @@ class Supabase_Admin_Page {
     }
 
     /**
+     * AJAX handler for setting image column designations (multi-select)
+     */
+    public function ajax_set_image_columns() {
+        check_ajax_referer('supabase_admin', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Insufficient permissions']);
+        }
+
+        $table_name = isset($_POST['table']) ? sanitize_text_field($_POST['table']) : '';
+        $submitted_columns = isset($_POST['image_columns']) ? (array) $_POST['image_columns'] : [];
+
+        if (empty($table_name)) {
+            wp_send_json_error(['message' => 'Table name required']);
+        }
+
+        $tables = get_option('supabase_schema_tables', []);
+        $found = false;
+        $valid_columns = [];
+
+        foreach ($tables as &$table) {
+            if ($table['table_name'] === $table_name) {
+                $available_columns = $this->get_table_column_names($table);
+                $valid_columns = $this->sanitize_table_search_fields($submitted_columns, $available_columns);
+
+                if (!empty($valid_columns)) {
+                    $table['image_columns'] = $valid_columns;
+                } else {
+                    unset($table['image_columns']);
+                }
+                $found = true;
+                break;
+            }
+        }
+
+        if (!$found) {
+            wp_send_json_error(['message' => 'Table not found']);
+        }
+
+        update_option('supabase_schema_tables', $tables);
+
+        wp_send_json_success([
+            'message' => 'Image columns updated',
+            'table' => $table_name,
+            'image_columns' => $valid_columns
+        ]);
+    }
+
+    /**
      * AJAX handler for setting searchable/displayed fields per table (General Search)
      */
     public function ajax_set_table_search_fields() {
@@ -1451,6 +1544,23 @@ class Supabase_Admin_Page {
         }
 
         return $sanitized_fields;
+    }
+
+    /**
+     * Get configured image columns for a table by name.
+     */
+    private function get_table_image_columns($table_name) {
+        $tables = get_option('supabase_schema_tables', []);
+        foreach ($tables as $table) {
+            if ($table['table_name'] === $table_name) {
+                if (!isset($table['image_columns']) || !is_array($table['image_columns'])) {
+                    return [];
+                }
+                $available_columns = $this->get_table_column_names($table);
+                return $this->sanitize_table_search_fields($table['image_columns'], $available_columns);
+            }
+        }
+        return [];
     }
 
     /**

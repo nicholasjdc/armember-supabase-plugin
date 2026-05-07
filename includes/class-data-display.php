@@ -759,10 +759,22 @@ class Supabase_Data_Display {
             $columns = array_intersect($columns, $specified_columns);
         }
 
-        // Parse image columns
+        // Parse image columns: explicit shortcode attribute takes precedence,
+        // otherwise fall back to the per-table designation set in the admin UI.
         $image_columns = [];
         if (!empty($atts['image_columns'])) {
             $image_columns = array_map('trim', explode(',', $atts['image_columns']));
+        } else {
+            foreach ($tables as $t) {
+                if ($t['table_name'] === $table_name && !empty($t['image_columns']) && is_array($t['image_columns'])) {
+                    $image_columns = $t['image_columns'];
+                    break;
+                }
+            }
+        }
+        // Only keep image columns that actually exist in the resolved column set
+        if (!empty($image_columns)) {
+            $image_columns = array_values(array_intersect($image_columns, $columns));
         }
 
         // Render DataTables table

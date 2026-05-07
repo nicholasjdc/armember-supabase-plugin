@@ -353,6 +353,72 @@ jQuery(document).ready(function($) {
         });
     });
 
+    // Image columns multi-select handler
+    $(document).on('change', '.image-columns-select', function() {
+        var $select = $(this);
+        var tableName = $select.data('table');
+        var selected = $select.val() || [];
+        var previous = $select.data('previous-value');
+        if (!Array.isArray(previous)) {
+            previous = [];
+        }
+
+        if (!tableName) {
+            alert('Error: Table name not found. Please refresh and try again.');
+            return;
+        }
+
+        if (typeof supabaseAdmin === 'undefined' || !supabaseAdmin.ajaxUrl || !supabaseAdmin.nonce) {
+            alert('Error: Admin configuration not loaded. Please refresh and try again.');
+            return;
+        }
+
+        $select.prop('disabled', true);
+
+        $.ajax({
+            url: supabaseAdmin.ajaxUrl,
+            type: 'POST',
+            traditional: true,
+            data: {
+                action: 'supabase_set_image_columns',
+                nonce: supabaseAdmin.nonce,
+                table: tableName,
+                image_columns: selected
+            },
+            success: function(response) {
+                if (response && response.success) {
+                    $select.data('previous-value', selected.slice());
+                    var msg = selected.length
+                        ? 'Image columns set: ' + selected.join(', ')
+                        : 'Image columns cleared';
+                    var $notice = $('<div class="notice notice-success is-dismissible"><p></p></div>');
+                    $notice.find('p').text(msg);
+                    $('.wrap h1').first().after($notice);
+                    setTimeout(function() { $notice.fadeOut(function() { $(this).remove(); }); }, 3000);
+                } else {
+                    var errorMsg = (response && response.data && response.data.message)
+                        ? response.data.message
+                        : 'Unknown error occurred';
+                    alert('Error: ' + errorMsg);
+                    $select.val(previous);
+                }
+            },
+            error: function() {
+                alert('An error occurred while updating image columns.');
+                $select.val(previous);
+            },
+            complete: function() {
+                $select.prop('disabled', false);
+            }
+        });
+    });
+
+    // Capture initial selection so we can revert on failure
+    $('.image-columns-select').each(function() {
+        var $select = $(this);
+        $select.data('previous-value', ($select.val() || []).slice());
+    });
+
     // Debug: Verify PDF column selects exist and handler is attached
     setTimeout(function() {
         var $pdfSelects = $('.pdf-column-select');
