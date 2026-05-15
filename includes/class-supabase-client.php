@@ -105,8 +105,13 @@ class Supabase_Client {
 
         // Add 'or' parameter manually with minimal encoding
         if ($or_param !== null) {
-            // Only encode the search values, not the PostgREST syntax characters
-            $or_param_encoded = str_replace(' ', '%20', $or_param);
+            // Encode characters that have special meaning in URLs but preserve PostgREST
+            // syntax characters (parens, commas, dots). Double quotes are used to quote
+            // column identifiers with mixed case / spaces / special chars.
+            $or_param_encoded = strtr($or_param, [
+                ' ' => '%20',
+                '"' => '%22',
+            ]);
             $query_string .= ($query_string ? '&' : '') . 'or=' . $or_param_encoded;
         }
 

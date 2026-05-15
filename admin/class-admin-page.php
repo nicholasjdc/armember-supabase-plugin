@@ -324,8 +324,6 @@ class Supabase_Admin_Page {
                             <th>Columns</th>
                             <th>Locked</th>
                             <th>Library</th>
-                            <th>PDF Column</th>
-                            <th>Image Columns</th>
                             <th>Page Status</th>
                             <th>Actions</th>
                         </tr>
@@ -336,12 +334,6 @@ class Supabase_Admin_Page {
                             $page = $this->get_table_page($table['table_name']);
                             $page_exists = $page !== null;
                             $is_library = ($library_table === $table['table_name']);
-                            $pdf_column = $table['pdf_column'] ?? '';
-                            $available_column_names = $this->get_table_column_names($table);
-                            $image_columns = $this->sanitize_table_search_fields(
-                                isset($table['image_columns']) ? $table['image_columns'] : [],
-                                $available_column_names
-                            );
                             ?>
                             <tr data-table="<?php echo esc_attr($table['table_name']); ?>">
                                 <td><strong><?php echo esc_html($table['table_name']); ?></strong></td>
@@ -376,34 +368,6 @@ class Supabase_Admin_Page {
                                         </button>
                                     <?php endif; ?>
                                 </td>
-                                <td class="pdf-column-cell">
-                                    <select class="pdf-column-select"
-                                            data-table="<?php echo esc_attr($table['table_name']); ?>"
-                                            style="min-width: 150px;">
-                                        <option value="">-- None --</option>
-                                        <?php foreach ($table['columns'] as $column): ?>
-                                            <option value="<?php echo esc_attr($column['column_name']); ?>"
-                                                    <?php selected($pdf_column, $column['column_name']); ?>>
-                                                <?php echo esc_html($column['column_name']); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </td>
-                                <td class="image-columns-cell">
-                                    <select class="image-columns-select"
-                                            data-table="<?php echo esc_attr($table['table_name']); ?>"
-                                            multiple
-                                            size="4"
-                                            style="min-width: 180px;">
-                                        <?php foreach ($table['columns'] as $column): ?>
-                                            <option value="<?php echo esc_attr($column['column_name']); ?>"
-                                                    <?php selected(in_array($column['column_name'], $image_columns, true), true); ?>>
-                                                <?php echo esc_html($column['column_name']); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <p class="description" style="margin: 4px 0 0; font-size: 11px;">Hold Ctrl/Cmd to select multiple. URLs in these columns render as a "View Image" button.</p>
-                                </td>
                                 <td>
                                     <?php if ($page_exists): ?>
                                         <span class="dashicons dashicons-yes-alt" style="color: green;"></span>
@@ -430,7 +394,7 @@ class Supabase_Admin_Page {
                                 </td>
                             </tr>
                             <tr class="column-details" id="columns-<?php echo esc_attr($table['table_name']); ?>" style="display:none;">
-                                <td colspan="9">
+                                <td colspan="7">
                                     <div class="columns-list">
                                         <h4>Columns for <?php echo esc_html($table['table_name']); ?>:</h4>
                                         <ul>
@@ -450,6 +414,97 @@ class Supabase_Admin_Page {
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+
+                <!-- PDF & Image Columns Card -->
+                <?php
+                $pdf_image_first_table = reset($tables);
+                $pdf_image_default_table = (is_array($pdf_image_first_table) && isset($pdf_image_first_table['table_name'])) ? $pdf_image_first_table['table_name'] : '';
+                ?>
+                <div class="pdf-image-settings-card" style="margin-top: 30px; padding: 20px; background: #fff; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
+                    <h3 style="margin-top: 0;">
+                        <span class="dashicons dashicons-media-default" style="margin-right: 5px;"></span>
+                        PDF &amp; Image Columns
+                    </h3>
+                    <p class="description">
+                        Designate which column holds a PDF URL and which columns hold image URLs for each database. URLs in image columns render as a "View Image" button.
+                    </p>
+
+                    <div class="pdf-image-table-selector" style="margin-top: 15px;">
+                        <label for="pdf-image-table-select"><strong>Select database:</strong></label>
+                        <select id="pdf-image-table-select" style="min-width: 260px; margin-left: 10px;">
+                            <?php foreach ($tables as $table): ?>
+                                <option value="<?php echo esc_attr($table['table_name']); ?>"
+                                        <?php selected($table['table_name'], $pdf_image_default_table); ?>>
+                                    <?php echo esc_html(ucwords(str_replace('_', ' ', $table['table_name']))); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="pdf-image-settings-wrapper" style="margin-top: 20px;">
+                        <?php foreach ($tables as $table): ?>
+                            <?php
+                            $pi_table_name = $table['table_name'];
+                            $pi_pdf_column = $table['pdf_column'] ?? '';
+                            $pi_available_column_names = $this->get_table_column_names($table);
+                            $pi_image_columns = $this->sanitize_table_search_fields(
+                                isset($table['image_columns']) ? $table['image_columns'] : [],
+                                $pi_available_column_names
+                            );
+                            $pi_is_active = ($pi_table_name === $pdf_image_default_table);
+                            ?>
+                            <div class="table-pdf-image-settings"
+                                 data-table="<?php echo esc_attr($pi_table_name); ?>"
+                                 style="<?php echo $pi_is_active ? '' : 'display:none;'; ?>">
+                                <div class="pdf-column-section" style="margin-bottom: 20px;">
+                                    <h4 style="margin: 0 0 8px;">PDF Column</h4>
+                                    <select class="pdf-column-select"
+                                            data-table="<?php echo esc_attr($pi_table_name); ?>"
+                                            style="min-width: 220px;">
+                                        <option value="">-- None --</option>
+                                        <?php foreach ($table['columns'] as $column): ?>
+                                            <option value="<?php echo esc_attr($column['column_name']); ?>"
+                                                    <?php selected($pi_pdf_column, $column['column_name']); ?>>
+                                                <?php echo esc_html($column['column_name']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+
+                                <div class="image-columns-section">
+                                    <h4 style="margin: 0 0 8px;">Image Columns</h4>
+                                    <div class="image-columns-checkboxes" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px;">
+                                        <?php foreach ($table['columns'] as $column): ?>
+                                            <?php
+                                            $column_name = $column['column_name'] ?? '';
+                                            if ($column_name === '') {
+                                                continue;
+                                            }
+                                            ?>
+                                            <label style="display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; background: #f9f9f9; border: 1px solid #e5e5e5; border-radius: 4px; cursor: pointer;">
+                                                <input type="checkbox"
+                                                       class="image-column-checkbox"
+                                                       data-table="<?php echo esc_attr($pi_table_name); ?>"
+                                                       value="<?php echo esc_attr($column_name); ?>"
+                                                       <?php checked(in_array($column_name, $pi_image_columns, true), true); ?> />
+                                                <span>
+                                                    <strong><?php echo esc_html($column_name); ?></strong>
+                                                    <span style="color: #666; font-size: 12px; display: block;">
+                                                        <?php echo esc_html($column['data_type'] ?? 'unknown type'); ?>
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <p class="description" style="margin-top: 15px;">
+                        <strong>Note:</strong> Changes are saved automatically.
+                    </p>
+                </div>
 
                 <!-- General Search Settings Card -->
                 <div class="general-search-settings-card" style="margin-top: 30px; padding: 20px; background: #fff; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">

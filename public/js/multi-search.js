@@ -152,10 +152,16 @@ jQuery(document).ready(function($) {
                             var buttons = '<div class="record-actions">';
                             buttons += '<button type="button" class="button button-small expand-record-btn" aria-expanded="false" aria-label="View full record details">View Full Record</button>';
                             
-                            // Check if this record has a PDF URL and add "View image" button if so
+                            // Check if this record has a PDF URL and add "View PDF" button if so
                             var pdfUrl = getRecordPdfUrl(row);
                             if (pdfUrl) {
-                                buttons += '<button type="button" class="button button-small view-image-btn" aria-label="View PDF document" data-pdf-url="' + escapeHtml(pdfUrl) + '"><span class="dashicons dashicons-media-document"></span> View Image</button>';
+                                buttons += '<button type="button" class="button button-small view-pdf-btn" aria-label="View PDF document" data-pdf-url="' + escapeHtml(pdfUrl) + '"><span class="dashicons dashicons-media-document"></span> View PDF</button>';
+                            }
+
+                            // Check if this record has image URLs and add "View Image" button if so
+                            var imageUrls = getRecordImageUrls(row);
+                            if (imageUrls && imageUrls.length > 0) {
+                                buttons += '<button type="button" class="button button-small view-image-btn" aria-label="View image' + (imageUrls.length > 1 ? 's' : '') + '" data-image-urls="' + escapeHtml(JSON.stringify(imageUrls)) + '"><span class="dashicons dashicons-format-image"></span> View Image' + (imageUrls.length > 1 ? 's' : '') + '</button>';
                             }
                             
                             buttons += '<button type="button" class="button button-small print-record-btn" aria-label="Print full record"><span class="dashicons dashicons-printer"></span> Print</button>';
@@ -332,9 +338,9 @@ jQuery(document).ready(function($) {
             copyRecordToClipboard(fullRecord, $(this));
         });
 
-        // Handle view image button clicks
-        $('#multi-search-results-table').off('click', '.view-image-btn');
-        $('#multi-search-results-table').on('click', '.view-image-btn', function(e) {
+        // Handle view PDF button clicks
+        $('#multi-search-results-table').off('click', '.view-pdf-btn');
+        $('#multi-search-results-table').on('click', '.view-pdf-btn', function(e) {
             e.preventDefault();
             e.stopPropagation();
 
@@ -345,6 +351,24 @@ jQuery(document).ready(function($) {
             }
 
             openPdfModal(pdfUrl, $(this));
+        });
+
+        // Handle view image button clicks
+        $('#multi-search-results-table').off('click', '.view-image-btn');
+        $('#multi-search-results-table').on('click', '.view-image-btn', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            var imageUrls = $(this).data('image-urls');
+            if (typeof imageUrls === 'string') {
+                try { imageUrls = JSON.parse(imageUrls); } catch (err) { imageUrls = null; }
+            }
+            if (!Array.isArray(imageUrls) || imageUrls.length === 0) {
+                alert('Error: No image URLs found.');
+                return;
+            }
+
+            openImageModal(imageUrls, $(this));
         });
     }
 
@@ -1680,6 +1704,244 @@ jQuery(document).ready(function($) {
                         firstElement.focus();
                     }
                 }
+            }
+        });
+    }
+
+    /**
+     * Get image URLs from record if the database has image columns
+     */
+    function getRecordImageUrls(record) {
+        if (record && Array.isArray(record._image_urls)) {
+            var urls = record._image_urls.filter(function(u) {
+                return typeof u === 'string' && u.trim() !== '';
+            }).map(function(u) { return u.trim(); });
+            if (urls.length > 0) {
+                return urls;
+            }
+        }
+
+        if (!supabaseMultiSearch || !supabaseMultiSearch.tableImageColumns || !record || !record._source_database) {
+            return [];
+        }
+
+        var imageColumns = supabaseMultiSearch.tableImageColumns[record._source_database];
+        if (!Array.isArray(imageColumns) || imageColumns.length === 0) {
+            return [];
+        }
+
+        var found = [];
+        imageColumns.forEach(function(col) {
+            var value = null;
+            if (record.hasOwnProperty(col)) {
+                value = record[col];
+            } else {
+                for (var key in record) {
+                    if (record.hasOwnProperty(key) && key.toLowerCase() === col.toLowerCase()) {
+                        value = record[key];
+                        break;
+                    }
+                }
+            }
+            if (typeof value === 'string' && value.trim() !== '') {
+                found.push(value.trim());
+            }
+        });
+
+        return found;
+    }
+
+    /**
+     * Open image gallery in accessible modal
+     */
+    function openImageModal(imageUrls, triggerButton) {
+        var $modal = $('#supabase-multi-image-modal');
+        if ($modal.length === 0) {
+            $modal = createImageModal();
+            $('body').append($modal);
+        }
+
+        $modal.data('trigger-button', triggerButton);
+        $modal.data('image-urls', imageUrls);
+
+        $modal.removeClass('supabase-image-modal-hidden').addClass('supabase-image-modal-visible');
+        $('body').addClass('supabase-image-modal-open');
+        $modal.attr('aria-hidden', 'false');
+
+        showImageAtIndex($modal, 0);
+
+        $modal.find('.supabase-image-modal-close').focus();
+        trapImageModalFocus($modal);
+    }
+
+    /**
+     * Create image modal structure (reuses existing .supabase-image-modal styling)
+     */
+    function createImageModal() {
+        var modalHtml = '<div id="supabase-multi-image-modal" class="supabase-image-modal supabase-image-modal-hidden" role="dialog" aria-modal="true" aria-labelledby="supabase-multi-image-modal-title">' +
+            '<div class="supabase-image-modal-overlay" aria-hidden="true"></div>' +
+            '<div class="supabase-image-modal-container">' +
+                '<div class="supabase-image-modal-header">' +
+                    '<h2 id="supabase-multi-image-modal-title" class="supabase-image-modal-title">Image</h2>' +
+                    '<span class="supabase-image-counter" aria-live="polite">Image <span class="supabase-image-current">1</span> of <span class="supabase-image-total">1</span></span>' +
+                    '<a href="#" class="supabase-image-open-link" target="_blank" rel="noopener" aria-label="Open image in new tab">' +
+                        '<span class="dashicons dashicons-external" aria-hidden="true"></span> Open' +
+                    '</a>' +
+                    '<button type="button" class="supabase-image-modal-close" aria-label="Close image viewer">' +
+                        '<span class="dashicons dashicons-no-alt" aria-hidden="true"></span>' +
+                        '<span class="screen-reader-text">Close</span>' +
+                    '</button>' +
+                '</div>' +
+                '<div class="supabase-image-modal-body">' +
+                    '<button type="button" class="supabase-image-nav supabase-image-prev" aria-label="Previous image" disabled>' +
+                        '<span class="dashicons dashicons-arrow-left-alt2" aria-hidden="true"></span>' +
+                    '</button>' +
+                    '<div class="supabase-image-display-container">' +
+                        '<div class="supabase-image-loading">' +
+                            '<span class="dashicons dashicons-update spin" aria-hidden="true"></span>' +
+                            '<p>Loading image...</p>' +
+                        '</div>' +
+                        '<img class="supabase-image-display" src="" alt="" style="display:none;" />' +
+                        '<div class="supabase-image-error" style="display:none;">' +
+                            '<p class="supabase-image-error-text">Image could not be loaded.</p>' +
+                            '<a href="#" class="supabase-image-open-link-err" target="_blank" rel="noopener">Open in new tab</a>' +
+                        '</div>' +
+                    '</div>' +
+                    '<button type="button" class="supabase-image-nav supabase-image-next" aria-label="Next image" disabled>' +
+                        '<span class="dashicons dashicons-arrow-right-alt2" aria-hidden="true"></span>' +
+                    '</button>' +
+                '</div>' +
+            '</div>' +
+        '</div>';
+
+        var $modal = $(modalHtml);
+
+        $modal.find('.supabase-image-modal-close, .supabase-image-modal-overlay').on('click', function(e) {
+            e.preventDefault();
+            closeImageModal($modal);
+        });
+
+        $modal.on('keydown', function(e) {
+            if (e.key === 'Escape' || e.keyCode === 27) {
+                e.preventDefault();
+                closeImageModal($modal);
+            } else if (e.key === 'ArrowLeft' || e.keyCode === 37) {
+                e.preventDefault();
+                navigateImage($modal, -1);
+            } else if (e.key === 'ArrowRight' || e.keyCode === 39) {
+                e.preventDefault();
+                navigateImage($modal, 1);
+            }
+        });
+
+        $modal.find('.supabase-image-modal-container').on('click', function(e) {
+            e.stopPropagation();
+        });
+
+        $modal.find('.supabase-image-prev').on('click', function(e) {
+            e.preventDefault();
+            navigateImage($modal, -1);
+        });
+
+        $modal.find('.supabase-image-next').on('click', function(e) {
+            e.preventDefault();
+            navigateImage($modal, 1);
+        });
+
+        return $modal;
+    }
+
+    function navigateImage($modal, delta) {
+        var urls = $modal.data('image-urls') || [];
+        var current = $modal.data('current-index') || 0;
+        var next = current + delta;
+        if (next < 0 || next >= urls.length) {
+            return;
+        }
+        showImageAtIndex($modal, next);
+    }
+
+    function showImageAtIndex($modal, index) {
+        var urls = $modal.data('image-urls') || [];
+        if (urls.length === 0) {
+            return;
+        }
+        index = Math.max(0, Math.min(index, urls.length - 1));
+        $modal.data('current-index', index);
+
+        var url = urls[index];
+        var $img = $modal.find('.supabase-image-display');
+        var $loading = $modal.find('.supabase-image-loading');
+        var $error = $modal.find('.supabase-image-error');
+        var $openLinks = $modal.find('.supabase-image-open-link, .supabase-image-open-link-err');
+
+        $error.hide();
+        $img.hide().attr('alt', 'Image ' + (index + 1) + ' of ' + urls.length);
+        $loading.show();
+
+        $img.off('load.imgModal error.imgModal');
+        $img.on('load.imgModal', function() {
+            $loading.hide();
+            $img.show();
+        });
+        $img.on('error.imgModal', function() {
+            $loading.hide();
+            $error.show();
+        });
+        $img.attr('src', url);
+
+        $openLinks.attr('href', url);
+
+        $modal.find('.supabase-image-current').text(index + 1);
+        $modal.find('.supabase-image-total').text(urls.length);
+
+        var multiple = urls.length > 1;
+        $modal.find('.supabase-image-counter').toggle(multiple);
+        $modal.find('.supabase-image-nav').toggle(multiple);
+        $modal.find('.supabase-image-prev').prop('disabled', index === 0);
+        $modal.find('.supabase-image-next').prop('disabled', index === urls.length - 1);
+    }
+
+    function closeImageModal($modal) {
+        $modal.removeClass('supabase-image-modal-visible').addClass('supabase-image-modal-hidden');
+        $('body').removeClass('supabase-image-modal-open');
+        $modal.attr('aria-hidden', 'true');
+
+        $modal.find('.supabase-image-display').off('load.imgModal error.imgModal').attr('src', '');
+        $modal.data('image-urls', null);
+        $modal.data('current-index', null);
+
+        var $triggerButton = $modal.data('trigger-button');
+        if ($triggerButton && $triggerButton.length) {
+            $triggerButton.focus();
+        }
+        $modal.data('trigger-button', null);
+
+        $(document).off('keydown.imageModalFocusTrap');
+    }
+
+    function trapImageModalFocus($modal) {
+        $(document).off('keydown.imageModalFocusTrap').on('keydown.imageModalFocusTrap', function(e) {
+            if (!$modal.hasClass('supabase-image-modal-visible')) {
+                return;
+            }
+            if (e.key !== 'Tab' && e.keyCode !== 9) {
+                return;
+            }
+            var focusable = $modal.find(
+                'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            ).filter(':visible');
+            if (focusable.length === 0) {
+                return;
+            }
+            var first = focusable.first()[0];
+            var last = focusable.last()[0];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
             }
         });
     }

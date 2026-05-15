@@ -353,72 +353,6 @@ jQuery(document).ready(function($) {
         });
     });
 
-    // Image columns multi-select handler
-    $(document).on('change', '.image-columns-select', function() {
-        var $select = $(this);
-        var tableName = $select.data('table');
-        var selected = $select.val() || [];
-        var previous = $select.data('previous-value');
-        if (!Array.isArray(previous)) {
-            previous = [];
-        }
-
-        if (!tableName) {
-            alert('Error: Table name not found. Please refresh and try again.');
-            return;
-        }
-
-        if (typeof supabaseAdmin === 'undefined' || !supabaseAdmin.ajaxUrl || !supabaseAdmin.nonce) {
-            alert('Error: Admin configuration not loaded. Please refresh and try again.');
-            return;
-        }
-
-        $select.prop('disabled', true);
-
-        $.ajax({
-            url: supabaseAdmin.ajaxUrl,
-            type: 'POST',
-            traditional: true,
-            data: {
-                action: 'supabase_set_image_columns',
-                nonce: supabaseAdmin.nonce,
-                table: tableName,
-                image_columns: selected
-            },
-            success: function(response) {
-                if (response && response.success) {
-                    $select.data('previous-value', selected.slice());
-                    var msg = selected.length
-                        ? 'Image columns set: ' + selected.join(', ')
-                        : 'Image columns cleared';
-                    var $notice = $('<div class="notice notice-success is-dismissible"><p></p></div>');
-                    $notice.find('p').text(msg);
-                    $('.wrap h1').first().after($notice);
-                    setTimeout(function() { $notice.fadeOut(function() { $(this).remove(); }); }, 3000);
-                } else {
-                    var errorMsg = (response && response.data && response.data.message)
-                        ? response.data.message
-                        : 'Unknown error occurred';
-                    alert('Error: ' + errorMsg);
-                    $select.val(previous);
-                }
-            },
-            error: function() {
-                alert('An error occurred while updating image columns.');
-                $select.val(previous);
-            },
-            complete: function() {
-                $select.prop('disabled', false);
-            }
-        });
-    });
-
-    // Capture initial selection so we can revert on failure
-    $('.image-columns-select').each(function() {
-        var $select = $(this);
-        $select.data('previous-value', ($select.val() || []).slice());
-    });
-
     // Debug: Verify PDF column selects exist and handler is attached
     setTimeout(function() {
         var $pdfSelects = $('.pdf-column-select');
@@ -581,6 +515,91 @@ jQuery(document).ready(function($) {
             var $list = getSearchFieldsListForTable(tableName);
             updateSearchFieldCount($list);
             saveSearchFields(tableName, $list);
+        });
+    }
+
+    function getPdfImageGroupForTable(tableName) {
+        return $('.table-pdf-image-settings').filter(function() {
+            return $(this).data('table') === tableName;
+        }).first();
+    }
+
+    function getCheckedImageColumns($group) {
+        return $group.find('.image-column-checkbox:checked').map(function() {
+            return $(this).val();
+        }).get();
+    }
+
+    function applyImageSelectionToGroup($group, selected) {
+        $group.find('.image-column-checkbox').each(function() {
+            $(this).prop('checked', selected.indexOf($(this).val()) !== -1);
+        });
+    }
+
+    function saveImageColumnsForTable(tableName, $group) {
+        var selected = getCheckedImageColumns($group);
+        var previous = $group.data('saved-image-columns') || [];
+        var $boxes = $group.find('.image-column-checkbox');
+
+        $boxes.prop('disabled', true);
+
+        $.ajax({
+            url: supabaseAdmin.ajaxUrl,
+            type: 'POST',
+            traditional: true,
+            data: {
+                action: 'supabase_set_image_columns',
+                nonce: supabaseAdmin.nonce,
+                table: tableName,
+                image_columns: selected
+            },
+            success: function(response) {
+                if (response && response.success) {
+                    var saved = (response.data && response.data.image_columns) ? response.data.image_columns : selected;
+                    $group.data('saved-image-columns', saved.slice());
+                    applyImageSelectionToGroup($group, saved);
+                    var msg = saved.length
+                        ? 'Image columns updated for "' + tableName + '".'
+                        : 'Image columns cleared for "' + tableName + '".';
+                    showAdminNotice(msg, 'success');
+                } else {
+                    var errorMsg = (response && response.data && response.data.message) ? response.data.message : 'Failed to update image columns.';
+                    alert('Error: ' + errorMsg);
+                    applyImageSelectionToGroup($group, previous);
+                }
+            },
+            error: function() {
+                alert('An error occurred while updating image columns.');
+                applyImageSelectionToGroup($group, previous);
+            },
+            complete: function() {
+                $boxes.prop('disabled', false);
+            }
+        });
+    }
+
+    // PDF & Image Columns card (per-table dropdown swap)
+    if ($('#pdf-image-table-select').length > 0) {
+        $('.table-pdf-image-settings').each(function() {
+            var $group = $(this);
+            $group.data('saved-image-columns', getCheckedImageColumns($group));
+        });
+
+        function showSelectedPdfImageTable() {
+            var selectedTable = $('#pdf-image-table-select').val();
+            $('.table-pdf-image-settings').hide();
+            if (selectedTable) {
+                getPdfImageGroupForTable(selectedTable).show();
+            }
+        }
+
+        $('#pdf-image-table-select').on('change', showSelectedPdfImageTable);
+        showSelectedPdfImageTable();
+
+        $(document).on('change', '.image-column-checkbox', function() {
+            var tableName = $(this).data('table');
+            var $group = getPdfImageGroupForTable(tableName);
+            saveImageColumnsForTable(tableName, $group);
         });
     }
 

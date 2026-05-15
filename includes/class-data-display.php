@@ -292,7 +292,15 @@ class Supabase_Data_Display {
             }
 
             if ($is_text) {
-                $search_conditions[] = $col_name . '.ilike.*' . $encoded_search_value . '*';
+                // PostgREST/Postgres treats unquoted identifiers as lowercase and rejects
+                // identifiers containing anything but [a-z0-9_]. Quote any column name that
+                // isn't a strict lowercase identifier so mixed-case, spaces, slashes, etc. work.
+                if (preg_match('/^[a-z_][a-z0-9_]*$/', $col_name)) {
+                    $col_ref = $col_name;
+                } else {
+                    $col_ref = '"' . $col_name . '"';
+                }
+                $search_conditions[] = $col_ref . '.ilike.*' . $encoded_search_value . '*';
             }
         }
 
@@ -361,6 +369,25 @@ class Supabase_Data_Display {
         $pdf_column = isset($table_schema['pdf_column']) ? $table_schema['pdf_column'] : '';
         if (!empty($pdf_column) && array_key_exists($pdf_column, $result)) {
             $filtered_result['_pdf_url'] = $result[$pdf_column];
+        }
+
+        $image_columns = isset($table_schema['image_columns']) && is_array($table_schema['image_columns'])
+            ? $table_schema['image_columns']
+            : [];
+        if (!empty($image_columns)) {
+            $image_urls = [];
+            foreach ($image_columns as $image_column) {
+                if (!array_key_exists($image_column, $result)) {
+                    continue;
+                }
+                $url = $result[$image_column];
+                if (is_string($url) && trim($url) !== '') {
+                    $image_urls[] = trim($url);
+                }
+            }
+            if (!empty($image_urls)) {
+                $filtered_result['_image_urls'] = $image_urls;
+            }
         }
 
         return $filtered_result;
@@ -946,7 +973,8 @@ class Supabase_Data_Display {
             nonce: '<?php echo wp_create_nonce('wp_rest'); ?>',
             availableTables: <?php echo json_encode($tables); ?>,
             tablePageUrls: <?php echo json_encode($this->get_table_page_urls($tables)); ?>,
-            tablePdfColumns: <?php echo json_encode($this->get_table_pdf_columns($tables)); ?>
+            tablePdfColumns: <?php echo json_encode($this->get_table_pdf_columns($tables)); ?>,
+            tableImageColumns: <?php echo json_encode($this->get_table_image_columns($tables)); ?>
         };
         </script>
         <?php
@@ -993,6 +1021,23 @@ class Supabase_Data_Display {
         }
 
         return $pdf_columns;
+    }
+
+    /**
+     * Get image column mappings for tables
+     * Returns an array mapping table names to an array of image column names
+     */
+    private function get_table_image_columns($tables) {
+        $image_columns = [];
+
+        foreach ($tables as $table) {
+            $table_name = $table['table_name'];
+            if (!empty($table['image_columns']) && is_array($table['image_columns'])) {
+                $image_columns[$table_name] = array_values($table['image_columns']);
+            }
+        }
+
+        return $image_columns;
     }
 
     /**
