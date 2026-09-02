@@ -43,6 +43,12 @@
     }
 }
 
+/* The action row spans the full width so the buttons stay right-aligned
+   regardless of how many search fields are configured. */
+.search-row-actions {
+    grid-template-columns: 1fr;
+}
+
 .search-field {
     display: flex;
     flex-direction: column;

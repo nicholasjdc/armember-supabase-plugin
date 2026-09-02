@@ -625,22 +625,19 @@ class Supabase_Admin_Page {
      * Render Library Tab
      */
     private function render_library_tab() {
+        $library_manager = new Supabase_Library_Manager();
+
         // Handle form submission
-        if (isset($_POST['submit_library_settings'])) {
+        if (isset($_POST['submit_library_search_fields'])) {
             check_admin_referer('supabase_library_settings');
 
-            // Save geographic areas
-            $geographic_areas = isset($_POST['geographic_areas']) ? sanitize_textarea_field($_POST['geographic_areas']) : '';
-            $areas_array = array_filter(array_map('trim', explode("\n", $geographic_areas)));
-            update_option('supabase_library_geographic_areas', $areas_array);
+            $library_manager->update_search_config($this->collect_search_config_from_post());
 
-            echo '<div class="notice notice-success"><p>Library settings saved successfully.</p></div>';
+            echo '<div class="notice notice-success"><p>Search fields saved.</p></div>';
         }
 
-        $library_manager = new Supabase_Library_Manager();
         $library_table = $library_manager->get_library_table();
         $library_table_info = $library_manager->get_library_table_info();
-        $geographic_areas = $library_manager->get_geographic_areas();
 
         ?>
         <div class="library-settings-page">
@@ -675,28 +672,199 @@ class Supabase_Admin_Page {
 
             <hr>
 
+            <?php
+            $search_config = $library_manager->get_search_config($library_table_info);
+            $all_columns = $library_manager->get_column_names($library_table_info);
+            $config_issues = $library_manager->get_search_config_issues();
+
+            // Index the saved configuration by column so every live column can be
+            // listed, whether or not it has been configured yet.
+            $config_by_column = [];
+            $keyword_field = null;
+
+            foreach ($search_config as $configured) {
+                if ($configured['control'] === 'keyword') {
+                    $keyword_field = $configured;
+                    continue;
+                }
+                $config_by_column[strtolower($configured['column'])] = $configured;
+            }
+
+            if ($keyword_field === null) {
+                $keyword_field = [
+                    'label'   => 'Key Word',
+                    'enabled' => false,
+                    'order'   => 0,
+                    'targets' => []
+                ];
+            }
+
+            $field_rows = [];
+            foreach ($all_columns as $column) {
+                $existing = isset($config_by_column[strtolower($column)])
+                    ? $config_by_column[strtolower($column)]
+                    : null;
+
+                $field_rows[] = [
+                    'column'  => $column,
+                    'label'   => $existing ? $existing['label'] : $column,
+                    'control' => $existing ? $existing['control'] : 'text',
+                    'enabled' => $existing ? $existing['enabled'] : false,
+                    'options' => $existing ? $existing['options'] : [],
+                    'order'   => $existing ? $existing['order'] : 999,
+                ];
+            }
+
+            // Show configured fields first, in the order they appear on the form.
+            usort($field_rows, function ($a, $b) {
+                if ($a['enabled'] !== $b['enabled']) {
+                    return $a['enabled'] ? -1 : 1;
+                }
+                return $a['order'] <=> $b['order'];
+            });
+
+            $control_labels = [
+                'text'     => 'Text box - contains',
+                'exact'    => 'Text box - exact match',
+                'dropdown' => 'Dropdown',
+                'checkbox' => 'Yes/No checkbox',
+            ];
+            ?>
+
+            <?php if (!empty($config_issues)): ?>
+                <div class="notice notice-error">
+                    <p>
+                        <strong>Columns missing from the table:</strong>
+                        <?php echo esc_html(implode(', ', $config_issues)); ?>
+                    </p>
+                    <p>
+                        These were configured as search fields but no longer exist in
+                        <code><?php echo esc_html($library_table); ?></code>, so they have been left off the
+                        search form. This usually means the catalog was re-uploaded with different column
+                        names. Re-sync the schema from the
+                        <a href="?page=supabase-armember&tab=tables">Tables tab</a>, then re-point the
+                        affected fields below.
+                    </p>
+                </div>
+            <?php endif; ?>
+
             <form method="post" action="">
                 <?php wp_nonce_field('supabase_library_settings'); ?>
 
-                <h3>Physical Locations</h3>
-                <p>Configure the physical locations that appear in the library search dropdown. These values should match the "Physical Location" column in your database. Enter one location per line.</p>
+                <h3>Search Fields</h3>
+                <p>
+                    Choose which columns visitors can search on, what each one is called, and how it
+                    behaves. The search form on the catalog page is built from this list, so changes here
+                    take effect immediately with no code change.
+                </p>
 
-                <table class="form-table">
-                    <tr>
-                        <th scope="row">
-                            <label for="geographic_areas">Physical Locations</label>
-                        </th>
-                        <td>
-                            <textarea id="geographic_areas"
-                                      name="geographic_areas"
-                                      rows="10"
-                                      class="large-text code"><?php echo esc_textarea(implode("\n", $geographic_areas)); ?></textarea>
-                            <p class="description">Enter one physical location per line (e.g., Main Library, Branch A, Storage Room B). These values will be used to filter the "Physical Location" column in the database.</p>
-                        </td>
-                    </tr>
+                <table class="wp-list-table widefat striped">
+                    <thead>
+                        <tr>
+                            <th style="width: 70px;">Show</th>
+                            <th style="width: 60px;">Order</th>
+                            <th>Column</th>
+                            <th>Label shown to visitors</th>
+                            <th>Behaviour</th>
+                            <th>Dropdown choices (one per line)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php $row_index = 0; ?>
+
+                        <tr style="background: #f0f6fc;">
+                            <td>
+                                <input type="hidden" name="search_fields[<?php echo $row_index; ?>][control]" value="keyword" />
+                                <input type="checkbox"
+                                       name="search_fields[<?php echo $row_index; ?>][enabled]"
+                                       value="1"
+                                       <?php checked(!empty($keyword_field['enabled'])); ?> />
+                            </td>
+                            <td>
+                                <input type="number"
+                                       name="search_fields[<?php echo $row_index; ?>][order]"
+                                       value="<?php echo esc_attr($keyword_field['order']); ?>"
+                                       style="width: 55px;" />
+                            </td>
+                            <td><em>Key Word</em><br />
+                                <span style="color: #666; font-size: 12px;">searches several columns at once</span>
+                            </td>
+                            <td>
+                                <input type="text"
+                                       name="search_fields[<?php echo $row_index; ?>][label]"
+                                       value="<?php echo esc_attr($keyword_field['label']); ?>"
+                                       class="regular-text" />
+                            </td>
+                            <td colspan="2">
+                                <fieldset>
+                                    <legend style="font-size: 12px; color: #666;">Columns this searches:</legend>
+                                    <?php foreach ($all_columns as $column): ?>
+                                        <label style="display: inline-block; margin-right: 12px;">
+                                            <input type="checkbox"
+                                                   name="search_fields[<?php echo $row_index; ?>][targets][]"
+                                                   value="<?php echo esc_attr($column); ?>"
+                                                   <?php checked(in_array($column, $keyword_field['targets'], true)); ?> />
+                                            <?php echo esc_html($column); ?>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </fieldset>
+                            </td>
+                        </tr>
+
+                        <?php foreach ($field_rows as $field): ?>
+                            <?php $row_index++; ?>
+                            <tr>
+                                <td>
+                                    <input type="hidden"
+                                           name="search_fields[<?php echo $row_index; ?>][column]"
+                                           value="<?php echo esc_attr($field['column']); ?>" />
+                                    <input type="checkbox"
+                                           name="search_fields[<?php echo $row_index; ?>][enabled]"
+                                           value="1"
+                                           <?php checked($field['enabled']); ?> />
+                                </td>
+                                <td>
+                                    <input type="number"
+                                           name="search_fields[<?php echo $row_index; ?>][order]"
+                                           value="<?php echo esc_attr($field['order']); ?>"
+                                           style="width: 55px;" />
+                                </td>
+                                <td><code><?php echo esc_html($field['column']); ?></code></td>
+                                <td>
+                                    <input type="text"
+                                           name="search_fields[<?php echo $row_index; ?>][label]"
+                                           value="<?php echo esc_attr($field['label']); ?>"
+                                           class="regular-text" />
+                                </td>
+                                <td>
+                                    <select name="search_fields[<?php echo $row_index; ?>][control]">
+                                        <?php foreach ($control_labels as $value => $label): ?>
+                                            <option value="<?php echo esc_attr($value); ?>"
+                                                    <?php selected($field['control'], $value); ?>>
+                                                <?php echo esc_html($label); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </td>
+                                <td>
+                                    <textarea name="search_fields[<?php echo $row_index; ?>][options]"
+                                              rows="2"
+                                              class="large-text code"
+                                              placeholder="Only used for dropdowns"><?php echo esc_textarea(implode("\n", $field['options'])); ?></textarea>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
                 </table>
 
-                <?php submit_button('Save Library Settings', 'primary', 'submit_library_settings'); ?>
+                <p class="description">
+                    <strong>Behaviour:</strong> <em>contains</em> matches anywhere in the column, which suits
+                    titles and authors. <em>Exact match</em> requires the whole value, which suits call
+                    numbers. <em>Dropdown</em> gives visitors a fixed list to pick from. Dropdown choices must
+                    match the values stored in the column exactly, or the search returns nothing.
+                </p>
+
+                <?php submit_button('Save Search Fields', 'primary', 'submit_library_search_fields'); ?>
             </form>
 
             <hr>
@@ -812,11 +980,64 @@ class Supabase_Admin_Page {
             </table>
 
             <p class="description">
-                <strong>Note:</strong> If your Supabase table uses different column names, the data will not display correctly.
-                Future versions may support custom field mapping.
+                <strong>Note:</strong> This table describes the fields the catalog's detail view and
+                librarian interface expect. Which columns are <em>searchable</em> is controlled by the
+                Search Fields section above and does not depend on this list.
             </p>
         </div>
         <?php
+    }
+
+    /**
+     * Build a search field configuration from the submitted Library tab form.
+     *
+     * Values are only shaped here; validation against the live schema happens in
+     * Supabase_Library_Manager::update_search_config().
+     *
+     * @return array
+     */
+    private function collect_search_config_from_post() {
+        $submitted = isset($_POST['search_fields']) && is_array($_POST['search_fields'])
+            ? $_POST['search_fields']
+            : [];
+
+        $config = [];
+
+        foreach ($submitted as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $control = isset($entry['control']) ? sanitize_text_field($entry['control']) : 'text';
+
+            $field = [
+                'column'  => isset($entry['column']) ? sanitize_text_field($entry['column']) : '',
+                'label'   => isset($entry['label']) ? sanitize_text_field($entry['label']) : '',
+                'control' => $control,
+                'enabled' => !empty($entry['enabled']),
+                'order'   => isset($entry['order']) ? intval($entry['order']) : 0,
+            ];
+
+            if ($control === 'keyword') {
+                $field['key'] = 'keyword';
+                $field['targets'] = [];
+
+                if (isset($entry['targets']) && is_array($entry['targets'])) {
+                    foreach ($entry['targets'] as $target) {
+                        $field['targets'][] = sanitize_text_field($target);
+                    }
+                }
+            }
+
+            if ($control === 'dropdown') {
+                $raw_options = isset($entry['options']) ? sanitize_textarea_field($entry['options']) : '';
+                $field['options'] = array_values(array_filter(array_map('trim', explode("\n", $raw_options))));
+            }
+
+            $config[] = $field;
+        }
+
+        return $config;
     }
 
     /**

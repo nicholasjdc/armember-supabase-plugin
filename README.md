@@ -26,6 +26,21 @@ Navigate to **Supabase Sync** in the WordPress admin menu:
 - **Supabase Service Key**: Your Supabase service role key (kept secure)
 - **Paid Plans**: Comma-separated list of ARMember plan names that grant access
 
+### Library Tab
+- **Search Fields**: choose which columns visitors can search, the label shown for
+  each, and how each behaves:
+  - *Text box - contains* — matches anywhere in the column (titles, authors)
+  - *Text box - exact match* — requires the whole value (call numbers)
+  - *Dropdown* — visitors pick from a fixed list; the choices must match the values
+    stored in the column exactly
+  - *Yes/No checkbox* — filters to rows where the column is true
+  - *Key Word* — one box that searches several columns at once
+- The catalog search form is generated from this list, so adding or relabelling a
+  field needs no code change.
+- If a configured column is missing from the table (usually after a catalog
+  re-upload renamed it) the tab shows which ones, and those fields are left off the
+  form rather than producing a broken query.
+
 ### Tables Tab
 - Sync tables from Supabase
 - Create WordPress pages for individual tables

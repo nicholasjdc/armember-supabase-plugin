@@ -9,16 +9,51 @@ jQuery(document).ready(function($) {
     var hasSearched = false;
 
     /**
+     * Collect the current search criteria.
+     *
+     * Fields are discovered from the rendered form rather than named here, so
+     * adding or removing one in the admin needs no change to this file.
+     */
+    function collectCriteria() {
+        var criteria = {};
+
+        $('.library-search-field').each(function() {
+            var $field = $(this);
+            var key = $field.data('key');
+
+            if (!key) {
+                return;
+            }
+
+            var value;
+
+            if ($field.is(':checkbox')) {
+                value = $field.is(':checked') ? '1' : '';
+            } else {
+                value = $.trim($field.val() || '');
+            }
+
+            if (value !== '') {
+                criteria[key] = value;
+            }
+        });
+
+        return criteria;
+    }
+
+    /**
      * Check if at least one search field has data
      */
     function hasSearchCriteria() {
-        var title = $('#search-title').val().trim();
-        var author = $('#search-author').val().trim();
-        var keyword = $('#search-keyword').val().trim();
-        var physicalLocation = $('#search-physical-location').val();
-        var newOnly = $('#search-new').is(':checked');
+        var criteria = collectCriteria();
 
-        return title !== '' || author !== '' || keyword !== '' || physicalLocation !== '' || newOnly;
+        for (var key in criteria) {
+            if (criteria.hasOwnProperty(key)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -38,14 +73,8 @@ jQuery(document).ready(function($) {
             url: supabaseLibrary.apiUrl,
             type: 'GET',
             data: function(d) {
-                // Add search form parameters
-                d.title = $('#search-title').val();
-                d.author = $('#search-author').val();
-                d.keyword = $('#search-keyword').val();
-                d.physical_location = $('#search-physical-location').val();
-                d.new = $('#search-new').is(':checked') ? '1' : '';
-
-                // Debug logging
+                // Add search form parameters, keyed by the configured field names
+                $.extend(d, collectCriteria());
             },
             beforeSend: function(xhr) {
                 // Block the request if no search criteria
@@ -127,7 +156,7 @@ jQuery(document).ready(function($) {
 
         // Validate that at least one field has data
         if (!hasSearchCriteria()) {
-            alert('Please enter at least one search criterion (title, author, keyword, location, or new items).');
+            alert('Please enter at least one search criterion.');
             return false;
         }
 
@@ -150,7 +179,7 @@ jQuery(document).ready(function($) {
     // Users must click Search button to search
     /*
     var searchTimeout;
-    $('.search-input, .search-select, #search-new').on('change keyup', function() {
+    $('.library-search-field').on('change keyup', function() {
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(function() {
             table.ajax.reload();

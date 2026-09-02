@@ -134,6 +134,83 @@ class Supabase_Client {
     }
 
     /**
+     * Fetch rows using a prebuilt, fully encoded PostgREST query string.
+     *
+     * Unlike fetch(), this takes responsibility for encoding away from the
+     * client. Callers that need repeated filters on the same column, or that
+     * need user input quoted inside an or(...) group, cannot express that with
+     * the associative array fetch() accepts.
+     *
+     * @param string $table Table name
+     * @param string $query_string Encoded query string, without the leading "?"
+     * @return array|false Response data or false on error
+     */
+    public function fetch_query($table, $query_string) {
+        if (!$this->is_configured()) {
+            $this->log_error('Supabase not configured');
+            return false;
+        }
+
+        $endpoint = "{$this->url}/rest/v1/" . rawurlencode($table);
+        if ($query_string !== '') {
+            $endpoint .= '?' . $query_string;
+        }
+
+        $response = wp_remote_get($endpoint, [
+            'headers' => [
+                'apikey' => $this->key,
+                'Authorization' => "Bearer {$this->key}"
+            ],
+            'timeout' => 15
+        ]);
+
+        return $this->handle_response($response, 'fetch', $table);
+    }
+
+    /**
+     * Count rows matching a prebuilt query string.
+     *
+     * Uses PostgREST's exact-count header rather than fetching rows.
+     *
+     * @param string $table Table name
+     * @param string $query_string Encoded query string, without the leading "?"
+     * @return int|null Row count, or null if it could not be determined
+     */
+    public function count_query($table, $query_string) {
+        if (!$this->is_configured()) {
+            $this->log_error('Supabase not configured');
+            return null;
+        }
+
+        $endpoint = "{$this->url}/rest/v1/" . rawurlencode($table);
+        if ($query_string !== '') {
+            $endpoint .= '?' . $query_string;
+        }
+
+        $response = wp_remote_get($endpoint, [
+            'headers' => [
+                'apikey' => $this->key,
+                'Authorization' => "Bearer {$this->key}",
+                'Prefer' => 'count=exact',
+                'Range' => '0-0'
+            ],
+            'timeout' => 15
+        ]);
+
+        if (is_wp_error($response)) {
+            $this->log_error('Count query failed: ' . $response->get_error_message());
+            return null;
+        }
+
+        $content_range = wp_remote_retrieve_header($response, 'content-range');
+        if ($content_range && preg_match('#/(\d+)$#', $content_range, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    /**
      * Update data in a table
      *
      * @param string $table Table name

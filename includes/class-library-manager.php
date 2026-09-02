@@ -94,6 +94,288 @@ class Supabase_Library_Manager {
     }
 
     /**
+     * Option name holding the configurable search form definition.
+     */
+    const SEARCH_CONFIG_OPTION = 'supabase_library_search_config';
+
+    /**
+     * Control types a search field may use.
+     */
+    const SEARCH_CONTROLS = ['text', 'exact', 'dropdown', 'checkbox', 'keyword'];
+
+    /**
+     * Get the search form configuration, validated against the live schema.
+     *
+     * Falls back to a default that reproduces the previously hardcoded form, so
+     * the catalog behaves identically until someone edits it in the admin.
+     *
+     * @param array|null $table_info Defaults to the designated library table
+     * @return array List of field definitions
+     */
+    public function get_search_config($table_info = null) {
+        if ($table_info === null) {
+            $table_info = $this->get_library_table_info();
+        }
+
+        $columns = $this->get_column_names($table_info);
+
+        if (empty($columns)) {
+            return [];
+        }
+
+        $stored = get_option(self::SEARCH_CONFIG_OPTION, []);
+
+        if (empty($stored) || !is_array($stored)) {
+            return $this->get_default_search_config($columns);
+        }
+
+        return $this->sanitize_search_config($stored, $columns);
+    }
+
+    /**
+     * Save the search form configuration.
+     *
+     * @param array $config
+     * @return bool
+     */
+    public function update_search_config($config) {
+        $columns = $this->get_column_names($this->get_library_table_info());
+        return update_option(self::SEARCH_CONFIG_OPTION, $this->sanitize_search_config($config, $columns));
+    }
+
+    /**
+     * List configured columns that no longer exist in the table.
+     *
+     * A catalog re-upload that renames a column would otherwise fail silently,
+     * with the affected search field simply disappearing from the form.
+     *
+     * @return array Missing column names
+     */
+    public function get_search_config_issues() {
+        $stored = get_option(self::SEARCH_CONFIG_OPTION, []);
+
+        if (empty($stored) || !is_array($stored)) {
+            return [];
+        }
+
+        $columns = $this->get_column_names($this->get_library_table_info());
+
+        if (empty($columns)) {
+            return [];
+        }
+
+        $missing = [];
+
+        foreach ($stored as $field) {
+            $column = isset($field['column']) ? $field['column'] : '';
+
+            if ($column !== '' && !$this->find_column_case_insensitive($columns, $column)) {
+                $missing[] = $column;
+            }
+
+            if (isset($field['targets']) && is_array($field['targets'])) {
+                foreach ($field['targets'] as $target) {
+                    if (!$this->find_column_case_insensitive($columns, $target)) {
+                        $missing[] = $target;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($missing));
+    }
+
+    /**
+     * Default configuration, matching the form the catalog shipped with.
+     *
+     * @param array $columns Live column names
+     * @return array
+     */
+    private function get_default_search_config($columns) {
+        $defaults = [
+            ['column' => 'Title', 'label' => 'Title', 'control' => 'text'],
+            ['column' => 'Author', 'label' => 'Author', 'control' => 'text'],
+            [
+                'column'  => '',
+                'key'     => 'keyword',
+                'label'   => 'Key Word',
+                'control' => 'keyword',
+                'targets' => ['Title', 'Author', 'Description', 'Publisher']
+            ],
+            ['column' => 'Physical Location', 'label' => 'Physical Location', 'control' => 'dropdown'],
+            ['column' => 'New', 'label' => 'New Items Only', 'control' => 'checkbox'],
+        ];
+
+        $config = [];
+
+        foreach ($defaults as $field) {
+            $field['enabled'] = true;
+            $config[] = $field;
+        }
+
+        $config = $this->sanitize_search_config($config, $columns);
+
+        // Carry over the hand-typed location list from the previous settings
+        // screen so existing dropdown values are not lost.
+        $legacy_options = get_option('supabase_library_geographic_areas', []);
+
+        if (!empty($legacy_options) && is_array($legacy_options)) {
+            foreach ($config as &$field) {
+                if ($field['control'] === 'dropdown' && empty($field['options'])) {
+                    $field['options'] = array_values($legacy_options);
+                    break;
+                }
+            }
+            unset($field);
+        }
+
+        return $config;
+    }
+
+    /**
+     * Validate a configuration against the live schema.
+     *
+     * Fields whose column no longer exists are dropped rather than queried,
+     * which keeps a renamed column from producing a broken request.
+     *
+     * @param array $config
+     * @param array $columns Live column names
+     * @return array
+     */
+    private function sanitize_search_config($config, $columns) {
+        if (!is_array($config) || empty($columns)) {
+            return [];
+        }
+
+        $sanitized = [];
+        $used_keys = [];
+
+        foreach ($config as $field) {
+            if (!is_array($field)) {
+                continue;
+            }
+
+            $control = isset($field['control']) ? (string) $field['control'] : 'text';
+            if (!in_array($control, self::SEARCH_CONTROLS, true)) {
+                $control = 'text';
+            }
+
+            $column = '';
+            if ($control !== 'keyword') {
+                $requested = isset($field['column']) ? (string) $field['column'] : '';
+                $column = $this->find_column_case_insensitive($columns, $requested);
+
+                if (!$column) {
+                    continue;
+                }
+            }
+
+            // Keyword is a virtual field spanning several columns rather than
+            // one of its own.
+            $targets = [];
+            if ($control === 'keyword') {
+                $requested_targets = isset($field['targets']) && is_array($field['targets'])
+                    ? $field['targets']
+                    : [];
+
+                foreach ($requested_targets as $target) {
+                    $resolved = $this->find_column_case_insensitive($columns, (string) $target);
+                    if ($resolved && !in_array($resolved, $targets, true)) {
+                        $targets[] = $resolved;
+                    }
+                }
+
+                if (empty($targets)) {
+                    continue;
+                }
+            }
+
+            $key = isset($field['key']) && $field['key'] !== ''
+                ? $this->make_field_key((string) $field['key'])
+                : $this->make_field_key($column);
+
+            if ($key === '') {
+                continue;
+            }
+
+            // Two columns can slugify to the same key; keep both addressable.
+            $base_key = $key;
+            $suffix = 2;
+            while (isset($used_keys[$key])) {
+                $key = $base_key . '_' . $suffix;
+                $suffix++;
+            }
+            $used_keys[$key] = true;
+
+            $options = [];
+            if ($control === 'dropdown' && isset($field['options']) && is_array($field['options'])) {
+                foreach ($field['options'] as $option) {
+                    $option = trim((string) $option);
+                    if ($option !== '' && !in_array($option, $options, true)) {
+                        $options[] = $option;
+                    }
+                }
+            }
+
+            $label = isset($field['label']) && trim((string) $field['label']) !== ''
+                ? trim((string) $field['label'])
+                : ($column !== '' ? $column : ucfirst($key));
+
+            $sanitized[] = [
+                'key'     => $key,
+                'column'  => $column,
+                'label'   => $label,
+                'control' => $control,
+                'enabled' => !empty($field['enabled']),
+                'targets' => $targets,
+                'options' => $options,
+                'order'   => isset($field['order']) ? intval($field['order']) : count($sanitized),
+            ];
+        }
+
+        usort($sanitized, function ($a, $b) {
+            return $a['order'] <=> $b['order'];
+        });
+
+        return $sanitized;
+    }
+
+    /**
+     * Build a stable REST parameter name from a column name.
+     *
+     * The slugs match the parameter names the catalog already used, so
+     * "Physical Location" stays physical_location.
+     *
+     * @param string $column
+     * @return string
+     */
+    private function make_field_key($column) {
+        $key = strtolower(preg_replace('/[^A-Za-z0-9]+/', '_', (string) $column));
+        return trim($key, '_');
+    }
+
+    /**
+     * Extract column names from a table definition.
+     *
+     * @param array|null $table_info
+     * @return array
+     */
+    public function get_column_names($table_info) {
+        if (!$table_info || !isset($table_info['columns']) || !is_array($table_info['columns'])) {
+            return [];
+        }
+
+        $columns = [];
+        foreach ($table_info['columns'] as $column) {
+            if (isset($column['column_name']) && $column['column_name'] !== '') {
+                $columns[] = $column['column_name'];
+            }
+        }
+
+        return $columns;
+    }
+
+    /**
      * Get field mappings for library columns
      * Maps standard library fields to actual database columns
      * Updated for SGS Library Records schema

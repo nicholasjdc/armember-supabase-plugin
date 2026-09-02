@@ -161,7 +161,19 @@ class Supabase_Library_Display {
             }
         }
 
-        $geographic_areas = $this->library_manager->get_geographic_areas();
+        // The search form is built from the admin-managed configuration, so
+        // adding or relabelling a field is a settings change, not a code change.
+        $search_config = $this->library_manager->get_search_config($table_info);
+        $search_fields = array_values(array_filter($search_config, function ($field) {
+            return !empty($field['enabled']);
+        }));
+
+        if (empty($search_fields)) {
+            return '<div class="supabase-notice supabase-error">No search fields are configured for the library catalog. Please contact the site administrator.</div>';
+        }
+
+        // Two fields per row, matching the existing stylesheet.
+        $rows = array_chunk($search_fields, 2);
 
         ob_start();
         ?>
@@ -170,43 +182,15 @@ class Supabase_Library_Display {
                 <h2>Search Library Catalog</h2>
 
                 <form id="library-search-form" class="search-form">
-                    <div class="search-row">
-                        <div class="search-field">
-                            <label for="search-title">Title</label>
-                            <input type="text" id="search-title" name="title" class="search-input" placeholder="Enter title...">
+                    <?php foreach ($rows as $row): ?>
+                        <div class="search-row">
+                            <?php foreach ($row as $field): ?>
+                                <?php $this->render_search_field($field); ?>
+                            <?php endforeach; ?>
                         </div>
+                    <?php endforeach; ?>
 
-                        <div class="search-field">
-                            <label for="search-author">Author</label>
-                            <input type="text" id="search-author" name="author" class="search-input" placeholder="Enter author...">
-                        </div>
-                    </div>
-
-                    <div class="search-row">
-                        <div class="search-field">
-                            <label for="search-keyword">Keyword</label>
-                            <input type="text" id="search-keyword" name="keyword" class="search-input" placeholder="Enter keyword...">
-                        </div>
-
-                        <div class="search-field">
-                            <label for="search-physical-location">Physical Location</label>
-                            <select id="search-physical-location" name="physical_location" class="search-select">
-                                <option value="">All Locations</option>
-                                <?php foreach ($geographic_areas as $area): ?>
-                                    <option value="<?php echo esc_attr($area); ?>"><?php echo esc_html($area); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="search-row">
-                        <div class="search-field checkbox-field">
-                            <label>
-                                <input type="checkbox" id="search-new" name="new" value="1">
-                                New Items Only
-                            </label>
-                        </div>
-
+                    <div class="search-row search-row-actions">
                         <div class="search-actions">
                             <button type="submit" class="button button-primary">Search</button>
                             <button type="button" id="clear-search" class="button">Clear</button>
@@ -251,6 +235,79 @@ class Supabase_Library_Display {
     }
 
     /**
+     * Naive plural for dropdown placeholders ("All Locations").
+     *
+     * @param string $label
+     * @return string
+     */
+    private function pluralize($label) {
+        return substr(strtolower($label), -1) === 's' ? $label : $label . 's';
+    }
+
+    /**
+     * Render one search field from its configuration.
+     *
+     * Every control carries a data-key attribute; the JavaScript collects
+     * criteria from those rather than from hardcoded element ids.
+     *
+     * @param array $field
+     * @return void
+     */
+    private function render_search_field($field) {
+        $key = $field['key'];
+        $id = 'search-' . str_replace('_', '-', $key);
+        $label = $field['label'];
+
+        if ($field['control'] === 'checkbox') {
+            ?>
+            <div class="search-field checkbox-field">
+                <label>
+                    <input type="checkbox"
+                           id="<?php echo esc_attr($id); ?>"
+                           name="<?php echo esc_attr($key); ?>"
+                           class="library-search-field"
+                           data-key="<?php echo esc_attr($key); ?>"
+                           value="1">
+                    <?php echo esc_html($label); ?>
+                </label>
+            </div>
+            <?php
+            return;
+        }
+
+        if ($field['control'] === 'dropdown') {
+            ?>
+            <div class="search-field">
+                <label for="<?php echo esc_attr($id); ?>"><?php echo esc_html($label); ?></label>
+                <select id="<?php echo esc_attr($id); ?>"
+                        name="<?php echo esc_attr($key); ?>"
+                        class="search-select library-search-field"
+                        data-key="<?php echo esc_attr($key); ?>">
+                    <option value="">All <?php echo esc_html($this->pluralize($label)); ?></option>
+                    <?php foreach ($field['options'] as $option): ?>
+                        <option value="<?php echo esc_attr($option); ?>"><?php echo esc_html($option); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php
+            return;
+        }
+
+        // text, exact and keyword all present as a free text input.
+        ?>
+        <div class="search-field">
+            <label for="<?php echo esc_attr($id); ?>"><?php echo esc_html($label); ?></label>
+            <input type="text"
+                   id="<?php echo esc_attr($id); ?>"
+                   name="<?php echo esc_attr($key); ?>"
+                   class="search-input library-search-field"
+                   data-key="<?php echo esc_attr($key); ?>"
+                   placeholder="<?php echo esc_attr('Enter ' . strtolower($label) . '...'); ?>">
+        </div>
+        <?php
+    }
+
+    /**
      * Handle library search REST API request
      *
      * @param WP_REST_Request $request
@@ -279,14 +336,6 @@ class Supabase_Library_Display {
 
             $table_name = $table_info['table_name'];
 
-        // Get search parameters
-        $title = $request->get_param('title');
-        $author = $request->get_param('author');
-        $keyword = $request->get_param('keyword');
-        $physical_location = $request->get_param('physical_location');
-        $new_only = $request->get_param('new');
-
-
         // DataTables parameters
         $draw = intval($request->get_param('draw') ?? 1);
         $start = intval($request->get_param('start') ?? 0);
@@ -299,123 +348,80 @@ class Supabase_Library_Display {
         }
 
         // Build query
-        $query_params = [];
         $filters = [];
 
         // Get actual column names from table (case-insensitive)
         $actual_columns = $this->get_actual_column_names($table_info);
 
-        // Add search filters
-        if (!empty($title)) {
-            $title_col = $this->find_column($actual_columns, 'title');
-            if ($title_col) {
-                $filters[] = $title_col . '.ilike.*' . $title . '*';
+        // Search fields come from the admin-managed configuration. Columns have
+        // already been resolved against the live schema, so anything that was
+        // renamed in the table has been dropped rather than queried.
+        $search_config = $this->library_manager->get_search_config($table_info);
+        $text_columns = [];
+
+        foreach ($search_config as $field) {
+            if (empty($field['enabled'])) {
+                continue;
+            }
+
+            if ($field['control'] === 'text' || $field['control'] === 'exact') {
+                $text_columns[] = $field['column'];
+            } elseif ($field['control'] === 'keyword') {
+                $text_columns = array_merge($text_columns, $field['targets']);
+            }
+
+            $value = $request->get_param($field['key']);
+
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            $value = sanitize_text_field((string) $value);
+
+            if ($value === '') {
+                continue;
+            }
+
+            $filter = $this->build_field_filter($field, $value);
+
+            if ($filter !== null) {
+                $filters[] = $filter;
             }
         }
 
-        if (!empty($author)) {
-            $author_col = $this->find_column($actual_columns, 'author');
-            if ($author_col) {
-                $filters[] = $author_col . '.ilike.*' . $author . '*';
-            }
-        }
-
-        if (!empty($keyword)) {
-            // Keyword searches across multiple fields (title, author, description, publisher)
-            $keyword_search_columns = ['title', 'author', 'description', 'publisher'];
-            $keyword_filters = [];
-            
-            foreach ($keyword_search_columns as $col_name) {
-                $col = $this->find_column($actual_columns, $col_name);
-                if ($col) {
-                    $keyword_filters[] = $col . '.ilike.*' . $keyword . '*';
-                }
-            }
-            
-            if (!empty($keyword_filters)) {
-                $filters[] = 'or=(' . implode(',', $keyword_filters) . ')';
-            }
-        }
-
-        if (!empty($physical_location)) {
-            $physical_location_col = $this->find_column($actual_columns, 'Physical Location');
-            if ($physical_location_col) {
-                // For exact matching with spaces and special characters like "/"
-                // Use .eq. operator - the value will be properly encoded during query building
-                $filters[] = $physical_location_col . '.eq.' . $physical_location;
-            }
-        }
-
-        if (!empty($new_only)) {
-            $new_col = $this->find_column($actual_columns, 'new');
-            if ($new_col) {
-                $filters[] = $new_col . '.eq.true';
-            }
-        }
-
-        // DataTables global search
+        // DataTables global search, across every column the form can search.
         if (!empty($search_value)) {
-            $title_col = $this->find_column($actual_columns, 'title');
-            $author_col = $this->find_column($actual_columns, 'author');
+            $search_value = sanitize_text_field((string) $search_value);
             $search_filters = [];
 
-            if ($title_col) {
-                $search_filters[] = $title_col . '.ilike.*' . $search_value . '*';
-            }
-            if ($author_col) {
-                $search_filters[] = $author_col . '.ilike.*' . $search_value . '*';
+            foreach (array_unique($text_columns) as $column) {
+                $search_filters[] = $this->filter_cmp($column, 'ilike', '*' . $search_value . '*');
             }
 
             if (!empty($search_filters)) {
-                $filters[] = 'or=(' . implode(',', $search_filters) . ')';
+                $filters[] = $this->filter_or($search_filters);
             }
         }
+
+        // Build the query string once, so the count and the data query can never
+        // drift apart.
+        $count_query = $this->build_query_string($filters);
+        $data_query = $this->build_query_string($filters, [
+            'order'  => $this->resolve_sort_column($actual_columns, $search_config),
+            'limit'  => $length,
+            'offset' => $start
+        ]);
 
         // Get total count (without filters)
         $total_count = $this->get_table_count($table_name);
 
         // Get filtered count (with filters applied)
-        $filtered_count = $this->get_filtered_count($table_name, $filters, $actual_columns);
-        
-        // Debug logging
-
-        // Build query parameters for Supabase fetch method
-        $query_params = [
-            'limit' => $length,
-            'offset' => $start
-        ];
-
-        // Add order by title
-        $title_col = $this->find_column($actual_columns, 'title');
-        if ($title_col) {
-            $query_params['order'] = $title_col . '.asc';
-        }
-
-        // Add filters to query params
-        foreach ($filters as $filter) {
-            // Filters can be in two formats:
-            // 1. "key=value" (e.g., "or=(Title.ilike.*george*)")
-            // 2. "column.operator.value" (e.g., "Title.ilike.*george*")
-
-            if (strpos($filter, '=') !== false) {
-                // Format: key=value
-                list($key, $value) = explode('=', $filter, 2);
-                $query_params[$key] = $value;
-            } else {
-                // Format: column.operator.value
-                // Extract column name (everything before first dot)
-                $parts = explode('.', $filter, 2);
-                if (count($parts) === 2) {
-                    $column = $parts[0];
-                    $operatorAndValue = $parts[1]; // e.g., "eq.Branch A/B" or "ilike.*george*"
-                    $query_params[$column] = $operatorAndValue;
-                }
-            }
-        }
-
+        $filtered_count = empty($filters)
+            ? $total_count
+            : $this->get_filtered_count($table_name, $count_query);
 
         // Fetch data
-        $data = $this->supabase->fetch($table_name, $query_params);
+        $data = $this->supabase->fetch_query($table_name, $data_query);
 
         if ($data === false) {
             return new WP_REST_Response([
@@ -450,6 +456,221 @@ class Supabase_Library_Display {
                 'message' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Decide which column to sort results by.
+     *
+     * Prefers title, then the first configured column-backed field, so a table
+     * without a title column still returns results in a stable order.
+     *
+     * @param array $actual_columns
+     * @param array $search_config
+     * @return string|null
+     */
+    private function resolve_sort_column($actual_columns, $search_config) {
+        $title_col = $this->find_column($actual_columns, 'title');
+
+        if ($title_col) {
+            return $title_col;
+        }
+
+        foreach ($search_config as $field) {
+            if (!empty($field['enabled']) && $field['column'] !== '') {
+                return $field['column'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Turn one configured field and its submitted value into a filter node.
+     *
+     * @param array $field Configured search field
+     * @param string $value Sanitised user input
+     * @return array|null Filter node, or null if the control produces no filter
+     */
+    private function build_field_filter($field, $value) {
+        switch ($field['control']) {
+            case 'text':
+                return $this->filter_cmp($field['column'], 'ilike', '*' . $value . '*');
+
+            case 'exact':
+            case 'dropdown':
+                return $this->filter_cmp($field['column'], 'eq', $value);
+
+            case 'checkbox':
+                // true is a literal, not user input, so it must not be quoted.
+                return $this->filter_cmp($field['column'], 'eq', 'true', true);
+
+            case 'keyword':
+                $keyword_filters = [];
+
+                foreach ($field['targets'] as $target) {
+                    $keyword_filters[] = $this->filter_cmp($target, 'ilike', '*' . $value . '*');
+                }
+
+                return empty($keyword_filters) ? null : $this->filter_or($keyword_filters);
+        }
+
+        return null;
+    }
+
+    /**
+     * Build a comparison filter node.
+     *
+     * @param string $column Actual database column name
+     * @param string $op PostgREST operator, e.g. "ilike" or "eq"
+     * @param string $value Operand value
+     * @param bool $raw True for literals such as "true" that must not be quoted
+     * @return array
+     */
+    private function filter_cmp($column, $op, $value, $raw = false) {
+        return [
+            'type'   => 'cmp',
+            'column' => $column,
+            'op'     => $op,
+            'value'  => $value,
+            'raw'    => $raw
+        ];
+    }
+
+    /**
+     * Build an OR group from comparison nodes.
+     *
+     * @param array $children Comparison nodes
+     * @return array
+     */
+    private function filter_or(array $children) {
+        return [
+            'type'     => 'or',
+            'children' => $children
+        ];
+    }
+
+    /**
+     * Build a fully encoded PostgREST query string from structured filters.
+     *
+     * Filters are emitted as an ordered list rather than an associative array,
+     * so two filters on the same column no longer overwrite each other.
+     * Repeated "or" parameters are combined with AND by PostgREST.
+     *
+     * @param array $filters Filter nodes from filter_cmp()/filter_or()
+     * @param array $options Optional 'order' column, 'limit', 'offset'
+     * @return string Query string without the leading "?"
+     */
+    private function build_query_string(array $filters, array $options = []) {
+        $parts = ['select=*'];
+
+        foreach ($filters as $filter) {
+            if (!isset($filter['type'])) {
+                continue;
+            }
+
+            if ($filter['type'] === 'cmp') {
+                $parts[] = $this->encode_key_identifier($filter['column']) . '='
+                    . $this->encode_operand($filter['op'], $filter['value'], $filter['raw'], false);
+                continue;
+            }
+
+            if ($filter['type'] === 'or' && !empty($filter['children'])) {
+                $group = [];
+                foreach ($filter['children'] as $child) {
+                    $group[] = $this->encode_grouped_identifier($child['column']) . '.'
+                        . $this->encode_operand($child['op'], $child['value'], $child['raw'], true);
+                }
+                $parts[] = 'or=(' . implode(',', $group) . ')';
+            }
+        }
+
+        if (!empty($options['order'])) {
+            $parts[] = 'order=' . rawurlencode($options['order']) . '.asc';
+        }
+        if (isset($options['limit'])) {
+            $parts[] = 'limit=' . intval($options['limit']);
+        }
+        if (isset($options['offset'])) {
+            $parts[] = 'offset=' . intval($options['offset']);
+        }
+
+        return implode('&', $parts);
+    }
+
+    /**
+     * Encode an operator and its value for use in a query string.
+     *
+     * The quoting here is deliberately asymmetric, because PostgREST parses the
+     * two positions with different parsers:
+     *
+     * - Inside an or(...) group it uses pLogicSingleVal, which strips double
+     *   quotes and honours \" and \\ escaping. Quoting is required here: a raw
+     *   comma or parenthesis in user input would otherwise close the group and
+     *   change what the query means.
+     * - At the top level it uses pSingleVal, which takes the remainder of the
+     *   value verbatim and does NOT strip quotes. Quoting here would be a bug:
+     *   the quote characters would become part of the search string.
+     *
+     * Wildcards survive either way, since PostgREST maps * to % after parsing.
+     *
+     * @param string $op PostgREST operator
+     * @param string $value Operand value
+     * @param bool $raw True for literals that must not be quoted
+     * @param bool $grouped True when the operand sits inside an or(...) group
+     * @return string
+     */
+    private function encode_operand($op, $value, $raw, $grouped) {
+        if ($raw) {
+            return $op . '.' . $value;
+        }
+
+        if (!$grouped) {
+            return $op . '.' . rawurlencode($value);
+        }
+
+        return $op . '.%22' . rawurlencode($this->escape_quoted($value)) . '%22';
+    }
+
+    /**
+     * Encode a column name for use as a query string key.
+     *
+     * A dot in a column name is read by PostgREST as a path separator, which
+     * would misparse catalog columns such as "Pub. Year" and "Acq. Year", so
+     * those are double-quoted. Names without a dot are left as-is to preserve
+     * the existing behaviour for values such as "Physical Location".
+     *
+     * @param string $column
+     * @return string
+     */
+    private function encode_key_identifier($column) {
+        if (strpos($column, '.') !== false) {
+            return $this->encode_grouped_identifier($column);
+        }
+
+        return rawurlencode($column);
+    }
+
+    /**
+     * Encode a column name for use inside an or(...) group.
+     *
+     * Identifiers containing spaces or mixed case must be double-quoted, which
+     * matters once columns like "Call Number" become searchable.
+     *
+     * @param string $column
+     * @return string
+     */
+    private function encode_grouped_identifier($column) {
+        return '%22' . rawurlencode($this->escape_quoted($column)) . '%22';
+    }
+
+    /**
+     * Escape a value for placement inside a PostgREST double-quoted string.
+     *
+     * @param string $value
+     * @return string
+     */
+    private function escape_quoted($value) {
+        return str_replace(['\\', '"'], ['\\\\', '\\"'], (string) $value);
     }
 
     /**
@@ -523,94 +744,18 @@ class Supabase_Library_Display {
     }
 
     /**
-     * Get filtered row count
+     * Get filtered row count.
      *
      * @param string $table_name
-     * @param array $filters Filter strings in the same format as data query
-     * @param array $actual_columns Actual column names from table
+     * @param string $query_string The same query string used for the data query
      * @return int
      */
-    private function get_filtered_count($table_name, $filters, $actual_columns = []) {
-        if (empty($filters)) {
+    private function get_filtered_count($table_name, $query_string) {
+        $count = $this->supabase->count_query($table_name, $query_string);
+
+        if ($count === null) {
+            // Fall back to the unfiltered total so paging still renders.
             return $this->get_table_count($table_name);
-        }
-
-        // Build query parameters for count query (same format as data query)
-        $count_params = [];
-        
-        // Add filters to count query params (same logic as data query)
-        foreach ($filters as $filter) {
-            // Filters can be in two formats:
-            // 1. "key=value" (e.g., "or=(Title.ilike.*george*)")
-            // 2. "column.operator.value" (e.g., "Title.ilike.*george*")
-
-            if (strpos($filter, '=') !== false) {
-                // Format: key=value
-                list($key, $value) = explode('=', $filter, 2);
-                $count_params[$key] = $value;
-            } else {
-                // Format: column.operator.value
-                // Extract column name (everything before first dot)
-                $parts = explode('.', $filter, 2);
-                if (count($parts) === 2) {
-                    $column = $parts[0];
-                    $operatorAndValue = $parts[1]; // e.g., "eq.Branch A/B" or "ilike.*george*"
-                    $count_params[$column] = $operatorAndValue;
-                }
-            }
-        }
-
-        // Use Supabase count endpoint with filters (same as fetch method)
-        // Build query string - special handling for 'or' parameter
-        $query_params = array_merge(['select' => '*'], $count_params);
-
-        // Extract 'or' parameter if present for special handling (same as fetch method)
-        $or_param = null;
-        if (isset($query_params['or'])) {
-            $or_param = $query_params['or'];
-            unset($query_params['or']);
-        }
-
-        // Build regular query string
-        $query_string = http_build_query($query_params);
-
-        // Add 'or' parameter manually with minimal encoding (same as fetch method)
-        if ($or_param !== null) {
-            $or_param_encoded = str_replace(' ', '%20', $or_param);
-            $query_string .= ($query_string ? '&' : '') . 'or=' . $or_param_encoded;
-        }
-
-        $endpoint = $this->supabase->url . '/rest/v1/' . $table_name;
-        if (!empty($query_string)) {
-            $endpoint .= '?' . $query_string;
-        }
-
-        // Debug logging
-        error_log('Filtered count query: ' . $endpoint);
-
-        $response = wp_remote_get($endpoint, [
-            'headers' => [
-                'apikey' => $this->supabase->key,
-                'Authorization' => 'Bearer ' . $this->supabase->key,
-                'Prefer' => 'count=exact',
-                'Range' => '0-0' // Only get headers, not data
-            ],
-            'timeout' => 15
-        ]);
-
-        if (is_wp_error($response)) {
-            error_log('Error getting filtered count: ' . $response->get_error_message());
-            // Fallback to total count if query fails
-            return $this->get_table_count($table_name);
-        }
-
-        $headers = wp_remote_retrieve_headers($response);
-        $count = 0;
-
-        if (isset($headers['content-range'])) {
-            if (preg_match('/\/(\d+)$/', $headers['content-range'], $matches)) {
-                $count = (int) $matches[1];
-            }
         }
 
         return $count;
